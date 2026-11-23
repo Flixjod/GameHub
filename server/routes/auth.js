@@ -1,12 +1,14 @@
 import { Router } from 'express'
+import crypto from 'node:crypto'
 import bcrypt from 'bcryptjs'
-import { db, levelProgress } from '../db.js'
+import { db, levelProgress, notify } from '../db.js'
 import { signToken, requireAuth } from '../lib/auth.js'
 import { evaluateAchievements } from '../lib/achievements.js'
 
 export const authRouter = Router()
 
 const AVATAR_COLORS = 10
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function publicUser(u) {
   const lvl = levelProgress(u.xp)
@@ -34,6 +36,9 @@ export function publicUser(u) {
     friends: friends.c,
     tournamentsJoined: u.tournaments_joined,
     settings: safeJson(u.settings),
+    email: u.email || '',
+    emailVerified: !!u.email_verified,
+    isGuest: !!u.is_guest,
     ownedThemes: ownership.filter((o) => o.kind === 'theme').map((o) => o.value),
     ownedAvatars: ownership.filter((o) => o.kind === 'avatar').map((o) => o.value),
     createdAt: u.created_at,
@@ -46,16 +51,24 @@ function safeJson(s) {
 }
 
 authRouter.post('/register', (req, res) => {
-  const { username, password, displayName } = req.body || {}
+  const { username, password, displayName, email } = req.body || {}
   if (!username || typeof username !== 'string' || !/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
     return res.status(400).json({ error: 'Username must be 3–20 characters (letters, numbers, underscore).' })
   }
   if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' })
+  if (email != null && email !== '' && !EMAIL_RE.test(String(email))) {
+    return res.status(400).json({ error: 'That email address doesn’t look valid.' })
+  }
   const existing = db.prepare(`SELECT id FROM users WHERE username = ?`).get(username.toLowerCase())
   if (existing) return res.status(409).json({ error: 'That username is already taken.' })
+  if (email) {
+    const usedEmail = db.prepare(`SELECT id FROM users WHERE email = ?`).get(String(email).toLowerCase())
+    if (usedEmail) return res.status(409).json({ error: 'That email is already registered.' })
+  }
   const hash = bcrypt.hashSync(password, 10)
-  const r = db.prepare(`INSERT INTO users (username, password_hash, display_name, avatar_color) VALUES (?,?,?,?)`)
-    .run(username.toLowerCase(), hash, (displayName || username).slice(0, 24), Math.floor(Math.random() * AVATAR_COLORS))
+  const r = db.prepare(`INSERT INTO users (username, password_hash, display_name, avatar_color, email, verification_token) VALUES (?,?,?,?,?,?)`)
+    .run(username.toLowerCase(), hash, (displayName || username).slice(0, 24), Math.floor(Math.random() * AVATAR_COLORS),
+      email ? String(email).toLowerCase() : '', email ? crypto.randomBytes(24).toString('hex') : null)
   const user = db.prepare(`SELECT * FROM users WHERE id = ?`).get(r.lastInsertRowid)
   evaluateAchievements(user.id, {})
   res.json({ token: signToken(user), user: publicUser(user) })
@@ -77,8 +90,35 @@ authRouter.get('/me', requireAuth, (req, res) => {
 })
 
 authRouter.patch('/me', requireAuth, (req, res) => {
-  const { displayName, bio, avatar, avatarColor, settings } = req.body || {}
+  const { displayName, bio, avatar, avatarColor, settings, email, username, currentPassword, password } = req.body || {}
   const u = req.user
+  if (password != null) {
+    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' })
+    if (!u.is_guest) {
+      if (!currentPassword || !bcrypt.compareSync(currentPassword, u.password_hash)) {
+        return res.status(403).json({ error: 'Current password is incorrect.' })
+      }
+    }
+    db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(bcrypt.hashSync(password, 10), u.id)
+    if (u.is_guest) db.prepare(`UPDATE users SET is_guest = 0 WHERE id = ?`).run(u.id)
+  }
+  if (username != null && u.is_guest) {
+    const name = String(username).toLowerCase()
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: 'Username must be 3–20 characters (letters, numbers, underscore).' })
+    if (db.prepare(`SELECT id FROM users WHERE username = ? AND id != ?`).get(name, u.id)) {
+      return res.status(409).json({ error: 'That username is already taken.' })
+    }
+    db.prepare(`UPDATE users SET username = ? WHERE id = ?`).run(name, u.id)
+  }
+  if (email != null) {
+    const mail = String(email).trim().toLowerCase()
+    if (mail && !EMAIL_RE.test(mail)) return res.status(400).json({ error: 'That email address doesn’t look valid.' })
+    if (mail && db.prepare(`SELECT id FROM users WHERE email = ? AND id != ?`).get(mail, u.id)) {
+      return res.status(409).json({ error: 'That email is already registered.' })
+    }
+    db.prepare(`UPDATE users SET email = ?, email_verified = 0, verification_token = ? WHERE id = ?`)
+      .run(mail, mail ? crypto.randomBytes(24).toString('hex') : null, u.id)
+  }
   if (displayName != null) {
     const name = String(displayName).trim()
     if (name.length < 2 || name.length > 24) return res.status(400).json({ error: 'Display name must be 2–24 characters.' })
@@ -95,4 +135,78 @@ authRouter.patch('/me', requireAuth, (req, res) => {
   }
   const updated = db.prepare(`SELECT * FROM users WHERE id = ?`).get(u.id)
   res.json({ user: publicUser(updated) })
+})
+
+
+// ---------------- guest accounts ----------------
+authRouter.post('/guest', (req, res) => {
+  const suffix = crypto.randomBytes(3).toString('hex')
+  const r = db.prepare(`INSERT INTO users (username, password_hash, display_name, avatar_color, is_guest) VALUES (?,?,?,?,1)`)
+    .run(`guest_${suffix}`, bcrypt.hashSync(crypto.randomBytes(24).toString('hex'), 10), 'Guest', Math.floor(Math.random() * AVATAR_COLORS))
+  const user = db.prepare(`SELECT * FROM users WHERE id = ?`).get(r.lastInsertRowid)
+  res.json({ token: signToken(user), user: publicUser(user) })
+})
+
+// ---------------- email verification ----------------
+authRouter.post('/verify/resend', requireAuth, (req, res) => {
+  const u = req.user
+  if (u.email_verified) return res.status(400).json({ error: 'Email is already verified.' })
+  if (!u.email) return res.status(400).json({ error: 'Add an email address in Settings first.' })
+  const token = crypto.randomBytes(24).toString('hex')
+  db.prepare(`UPDATE users SET verification_token = ? WHERE id = ?`).run(token, u.id)
+  notify(u.id, 'verify', 'Verify your email', `Confirmation code: ${token.slice(0, 8)}… (full token returned by the app — no SMTP configured)`, '/settings')
+  res.json({ ok: true, email: u.email, token })
+})
+
+authRouter.post('/verify', (req, res) => {
+  const { token } = req.body || {}
+  const u = token && db.prepare(`SELECT id FROM users WHERE verification_token = ?`).get(String(token))
+  if (!u) return res.status(400).json({ error: 'This verification link is invalid or already used.' })
+  db.prepare(`UPDATE users SET email_verified = 1, verification_token = NULL WHERE id = ?`).run(u.id)
+  res.json({ ok: true })
+})
+
+// ---------------- password reset ----------------
+authRouter.post('/forgot', (req, res) => {
+  const { username } = req.body || {}
+  const u = username && db.prepare(`SELECT * FROM users WHERE username = ?`).get(String(username).toLowerCase())
+  if (!u || u.is_guest) return res.json({ ok: true })
+  const token = crypto.randomBytes(24).toString('hex')
+  const expires = new Date(Date.now() + 15 * 60000).toISOString()
+  db.prepare(`UPDATE users SET reset_token = ?, reset_expires = ? WHERE id = ?`).run(token, expires, u.id)
+  notify(u.id, 'security', 'Password reset requested', `Someone asked to reset your password. Code prefix: ${token.slice(0, 8)}…`, '/settings')
+  res.json({ ok: true, resetToken: token, expiresInMinutes: 15 })
+})
+
+authRouter.post('/reset', (req, res) => {
+  const { token, password } = req.body || {}
+  if (!token) return res.status(400).json({ error: 'Reset token is required.' })
+  if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' })
+  const u = db.prepare(`SELECT * FROM users WHERE reset_token = ?`).get(String(token))
+  if (!u || !u.reset_expires || new Date(u.reset_expires).getTime() < Date.now()) {
+    return res.status(400).json({ error: 'This reset link is invalid or has expired.' })
+  }
+  const hash = bcrypt.hashSync(password, 10)
+  db.prepare(`UPDATE users SET password_hash = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?`).run(hash, u.id)
+  res.json({ ok: true })
+})
+
+// ---------------- account deletion ----------------
+authRouter.delete('/me', requireAuth, (req, res) => {
+  const u = req.user
+  if (!u.is_guest) {
+    const { password } = req.body || {}
+    if (!password || !bcrypt.compareSync(password, u.password_hash)) {
+      return res.status(403).json({ error: 'Confirm your password to delete this account.' })
+    }
+  }
+  const uid = u.id
+  db.prepare(`DELETE FROM friendships WHERE a_id = ? OR b_id = ?`).run(uid, uid)
+  db.prepare(`DELETE FROM friend_requests WHERE from_id = ? OR to_id = ?`).run(uid, uid)
+  db.prepare(`DELETE FROM purchases WHERE user_id = ?`).run(uid)
+  db.prepare(`DELETE FROM notifications WHERE user_id = ?`).run(uid)
+  db.prepare(`DELETE FROM tournament_registrations WHERE user_id = ?`).run(uid)
+  db.prepare(`DELETE FROM match_results WHERE user_id = ?`).run(uid)
+  db.prepare(`DELETE FROM users WHERE id = ?`).run(uid)
+  res.json({ ok: true })
 })

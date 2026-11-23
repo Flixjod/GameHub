@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { UserRound, Lock, Bell, Volume2, Palette, ShieldCheck, Loader2, Eye, EyeOff, Palette as ThemeIcon, Crown, Gem, LogOut } from 'lucide-react'
+import { UserRound, Lock, Bell, Volume2, Palette, ShieldCheck, Loader2, Eye, EyeOff, Palette as ThemeIcon, Crown, Gem, LogOut, Mail, MailCheck, Ghost, Trash2, KeyRound } from 'lucide-react'
 import { api } from '../lib/api.js'
-import { Pic, Badge, Button, Card, VerifiedIcon, Progress } from '../components/UI.jsx'
+import { Pic, Badge, Button, Card, VerifiedIcon, Progress, Modal } from '../components/UI.jsx'
 import { useAuth, useToast, useTheme } from '../store.jsx'
 import { ACCENT_THEMES, AVATAR_GRADIENTS } from '../lib/helpers.js'
 
@@ -16,7 +16,7 @@ const TABS = [
 ]
 
 export default function Settings() {
-  const { user, setUser, logout } = useAuth()
+  const { user, setUser, logout, refreshUser } = useAuth()
   const toast = useToast()
   const [tab, setTab] = useQueryTab()
 
@@ -58,7 +58,8 @@ export default function Settings() {
 
       {tab === 'profile' && <ProfileTab user={user} toast={toast} />}
       {tab === 'appearance' && <AppearanceTab user={user} s={s} save={saveSettings} toast={toast} />}
-      {tab !== 'profile' && tab !== 'appearance' && <PrefsTab tab={tab} s={s} save={saveSettings} />}
+      {tab === 'account' && <AccountTab user={user} toast={toast} setUser={setUser} refreshUser={refreshUser} logout={logout} />}
+      {tab !== 'profile' && tab !== 'appearance' && tab !== 'account' && <PrefsTab tab={tab} s={s} save={saveSettings} />}
       {tab !== 'account' && (
         <Card className="flex items-center gap-4 p-5">
           <Pic user={user} size={48} ring={user.isPremium} />
@@ -187,6 +188,161 @@ function AppearanceTab({ user, s, save, toast }) {
         Dark theme keeps the neon readable during long sessions — a light theme is on the roadmap.
       </div>
     </Card>
+  )
+}
+
+
+function AccountTab({ user, toast, setUser, refreshUser, logout }) {
+  const navigate = useNavigate()
+  const isGuest = !!user.isGuest
+  const [newUsername, setNewUsername] = useState('')
+  const [guestPass, setGuestPass] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [email, setEmail] = useState(user.email || '')
+  const [verifyToken, setVerifyToken] = useState('')
+  const [deletePass, setDeletePass] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const run = async (fn, msg) => {
+    setBusy(true)
+    try {
+      await fn()
+      if (msg) toast(msg, 'success')
+      await refreshUser()
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const upgradeGuest = () => run(async () => {
+    const res = await api('/auth/me', { method: 'PATCH', body: { username: newUsername.trim(), password: guestPass, displayName: newUsername.trim() } })
+    setUser({ ...user, ...res.user })
+  }, 'Account upgraded - you can now sign in from any device.')
+
+  const changePassword = () => run(async () => {
+    await api('/auth/me', { method: 'PATCH', body: { currentPassword, password: newPassword } })
+    setCurrentPassword(''); setNewPassword('')
+  }, 'Password changed.')
+
+  const saveEmail = () => run(async () => {
+    await api('/auth/me', { method: 'PATCH', body: { email: email.trim() } })
+  }, email.trim() ? 'Email saved - verify it to unlock recovery.' : 'Email removed.')
+
+  const sendVerification = () => run(async () => {
+    const d = await api('/auth/verify/resend', { method: 'POST' })
+    setVerifyToken(d.token)
+  }, 'Token generated below - no email service is configured in this environment.')
+
+  const confirmVerification = () => run(async () => {
+    await api('/auth/verify', { method: 'POST', body: { token: verifyToken.trim() } })
+    setVerifyToken('')
+  }, 'Email verified!')
+
+  const deleteAccount = () => run(async () => {
+    await api('/auth/me', { method: 'DELETE', body: isGuest ? {} : { password: deletePass } })
+    logout()
+    navigate('/login')
+  })
+
+  return (
+    <div className="space-y-4">
+      {isGuest && (
+        <Card className="p-6 space-y-4">
+          <div>
+            <p className="flex items-center gap-2 font-bold"><Ghost size={16} className="text-cyber-cyan" /> Upgrade guest account</p>
+            <p className="mb-3 mt-1 text-xs text-ink-faint">You are playing as a guest. Pick a username and password to keep your stats, rating and gems forever.</p>
+          </div>
+          <LabeledInput label="Username" value={newUsername} onChange={setNewUsername} max={20} placeholder="nightowl" />
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-ink-faint">New password</span>
+            <input type="password" value={guestPass} onChange={(e) => setGuestPass(e.target.value)} minLength={6}
+              className="w-full rounded-xl border border-line bg-panel px-4 py-3 text-sm transition focus:border-emerald-neon/50" placeholder={'•'.repeat(8)} />
+          </label>
+          <Button disabled={busy || newUsername.trim().length < 3 || guestPass.length < 6} onClick={upgradeGuest}><KeyRound size={15} /> Save my account</Button>
+        </Card>
+      )}
+
+      <Card className="p-6 space-y-4">
+        <div>
+          <p className="flex items-center gap-2 font-bold"><Mail size={16} className="text-emerald-neon" /> Email</p>
+          <p className="mb-3 mt-1 text-xs text-ink-faint">
+            {user.emailVerified ? <span className="inline-flex items-center gap-1 text-emerald-soft"><MailCheck size={13} /> Verified</span>
+              : user.email ? 'Unverified - add a real address, then confirm the token below to unlock password recovery.' : 'Not set - add one to enable email verification and password recovery.'}
+          </p>
+        </div>
+        <LabeledInput label="Email address" value={email} onChange={setEmail} type="email" placeholder="you@example.com" />
+        {!user.emailVerified && email.trim() && (
+          verifyToken ? (
+            <div className="rounded-xl border border-gold/30 bg-gold/[.06] p-3.5">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-200">Verification token</p>
+              <code className="mt-1.5 block truncate rounded-lg bg-black/40 px-2.5 py-1.5 font-mono text-[11px] text-amber-200">{verifyToken}</code>
+              <div className="mt-2 flex gap-2">
+                <Button size="sm" onClick={() => confirmVerification()} disabled={busy}>I have the token - verify now</Button>
+                <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard?.writeText(verifyToken); toast('Token copied', 'success') }}>Copy</Button>
+              </div>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" onClick={sendVerification} disabled={busy || !user.email}>Send verification token</Button>
+          )
+        )}
+        <Button variant="outline" disabled={busy} onClick={saveEmail}>{user.email ? 'Update email' : 'Save email'}</Button>
+      </Card>
+
+      {!isGuest && (
+        <Card className="p-6 space-y-4">
+          <div>
+            <p className="flex items-center gap-2 font-bold"><KeyRound size={16} className="text-gold" /> Change password</p>
+            <p className="mb-3 mt-1 text-xs text-ink-faint">Sessions on other devices keep working, but new sign-ins need the new password.</p>
+          </div>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-ink-faint">Current password</span>
+            <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password"
+              className="w-full rounded-xl border border-line bg-panel px-4 py-3 text-sm transition focus:border-emerald-neon/50" />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-ink-faint">New password</span>
+            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={6} autoComplete="new-password"
+              className="w-full rounded-xl border border-line bg-panel px-4 py-3 text-sm transition focus:border-emerald-neon/50" />
+          </label>
+          <Button disabled={busy || !currentPassword || newPassword.length < 6} onClick={changePassword}>Update password</Button>
+        </Card>
+      )}
+
+      <Card className="border-red-500/25 p-6 space-y-3">
+        <div>
+          <p className="flex items-center gap-2 font-bold text-red-300"><Trash2 size={16} /> Delete account</p>
+          <p className="mb-3 mt-1 text-xs text-ink-faint">Permanently removes your profile, stats, friends, purchases and match history. This cannot be undone.</p>
+        </div>
+        {!isGuest && (
+          <label className="block max-w-xs">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-ink-faint">Confirm with your password</span>
+            <input type="password" value={deletePass} onChange={(e) => setDeletePass(e.target.value)} autoComplete="current-password"
+              className="w-full rounded-xl border border-line bg-panel px-4 py-3 text-sm transition focus:border-red-500/50" />
+          </label>
+        )}
+        <Button variant="danger" disabled={busy || (!isGuest && !deletePass)} onClick={() => setConfirmDelete(true)}>
+          <Trash2 size={15} /> Delete my account
+        </Button>
+      </Card>
+
+      <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete account permanently?" width={420}>
+        <div className="space-y-4">
+          <p className="text-sm leading-relaxed text-ink-dim">
+            Everything tied to your player - XP, level, rating, friends, store purchases and every match record - will be erased immediately. There is no undo.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="danger" className="flex-1" disabled={busy} onClick={() => { setConfirmDelete(false); deleteAccount() }}>
+              <Trash2 size={15} /> Yes, delete forever
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>Keep my account</Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
   )
 }
 

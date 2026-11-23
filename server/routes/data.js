@@ -53,11 +53,26 @@ function softAuth(req, _res, next) {
 dataRouter.get('/matches/history', requireAuth, (req, res) => {
   const target = req.query.username ? db.prepare(`SELECT id FROM users WHERE username = ?`).get(String(req.query.username).toLowerCase()) : null
   const userId = target ? target.id : req.user.id
-  const rows = db.prepare(`SELECT m.id, m.game, m.mode, m.started_at, m.ended_at, mr.result, mr.rating_delta, mr.xp_delta, u.username, u.display_name, u.avatar, u.avatar_color
+  const rows = db.prepare(`SELECT m.id, m.game, m.mode, m.ranked, m.started_at, m.ended_at, mr.result, mr.rating_delta, mr.xp_delta, u.username, u.display_name, u.avatar, u.avatar_color
     FROM match_results mr JOIN matches m ON m.id = mr.match_id JOIN users u ON u.id = mr.user_id
     WHERE mr.user_id = ? ORDER BY m.ended_at DESC LIMIT 30`).all(userId)
   res.json({ matches: rows })
 })
+
+dataRouter.get('/matches/:id', requireAuth, (req, res) => {
+  const id = Number(req.params.id)
+  const m = db.prepare(`SELECT * FROM matches WHERE id = ?`).get(id)
+  if (!m) return res.status(404).json({ error: 'Match not found.' })
+  const mine = db.prepare(`SELECT 1 FROM match_results WHERE match_id = ? AND user_id = ?`).get(id, req.user.id)
+  if (!mine) return res.status(403).json({ error: 'You can only review matches you played.' })
+  const seats = db.prepare(`SELECT mr.result, mr.rating_delta, mr.rating_after, u.id, u.username, u.display_name, u.avatar, u.avatar_color
+    FROM match_results mr JOIN users u ON u.id = mr.user_id WHERE mr.match_id = ? ORDER BY mr.id`).all(id)
+  res.json({ match: { id: m.id, game: m.game, mode: m.mode, ranked: !!m.ranked, durationMs: m.duration_ms, endedReason: m.ended_reason }, moves: safeParse(m.moves), seats })
+})
+
+function safeParse(s) {
+  try { return JSON.parse(s || '[]') } catch { return [] }
+}
 
 // ---------- activity (last 7 days, real matches) ----------
 dataRouter.get('/activity', requireAuth, (req, res) => {

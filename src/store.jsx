@@ -28,8 +28,15 @@ export function AuthProvider({ children }) {
     return d.user
   }, [])
 
-  const register = useCallback(async (username, password, displayName) => {
-    const d = await api('/auth/register', { method: 'POST', body: { username, password, displayName } })
+  const register = useCallback(async (username, password, displayName, email) => {
+    const d = await api('/auth/register', { method: 'POST', body: { username, password, displayName, email } })
+    setToken(d.token)
+    setUser(d.user)
+    return d.user
+  }, [])
+
+  const guest = useCallback(async () => {
+    const d = await api('/auth/guest', { method: 'POST' })
     setToken(d.token)
     setUser(d.user)
     return d.user
@@ -55,10 +62,11 @@ export function AuthProvider({ children }) {
     loading,
     login,
     register,
+    guest,
     logout,
     refreshUser,
     setUser,
-  }), [user, loading, login, register, logout, refreshUser])
+  }), [user, loading, login, register, guest, logout, refreshUser])
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>
 }

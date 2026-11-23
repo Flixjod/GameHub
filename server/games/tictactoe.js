@@ -1,6 +1,5 @@
 // Server-authoritative TicTacToe engine.
 // State: { cells: (0|1|2)[9], turn: idx, players: [{id}], moves }
-import { GAMES } from '../lib/games.js'
 
 const LINES = [
   [0, 1, 2], [3, 4, 5], [6, 7, 8],

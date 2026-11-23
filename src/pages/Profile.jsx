@@ -8,6 +8,7 @@ import { PlayerStatsCard } from '../components/PlayerStatsCard.jsx'
 import { useAuth, useToast, useSocket } from '../store.jsx'
 import { timeAgo } from '../lib/helpers.js'
 import { GAME_ART } from '../components/GameArt.jsx'
+import MatchReview from '../components/game/MatchReview.jsx'
 
 const GAME_NAMES = { tictactoe: 'TicTacToe', reversi: 'Reversi', ludo: 'Ludo', snakes: 'Snake & Ladder' }
 
@@ -86,7 +87,7 @@ export default function Profile() {
       {isMe ? (
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
           <div className="min-w-0 space-y-6">
-            <RecentMatches history={history} />
+            <RecentMatches history={history} canReview />
           </div>
           <div className="space-y-6">
             <PlayerStatsCard />
@@ -96,7 +97,7 @@ export default function Profile() {
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
           <div className="min-w-0 space-y-6">
             <StatGrid profile={profile} winRate={winRate} />
-            <RecentMatches history={history} />
+            <RecentMatches history={history} canReview />
           </div>
           <div className="space-y-6">
             <StatHighlights profile={profile} />
@@ -164,7 +165,17 @@ function Row({ label, value }) {
   )
 }
 
-function RecentMatches({ history }) {
+function RecentMatches({ history, canReview }) {
+  const toast = useToast()
+  const [review, setReview] = useState(null)
+  const openReview = async (id, game, seats) => {
+    try {
+      const d = await api(`/matches/${id}`)
+      setReview({ gameId: game || d.match.game, moves: d.moves || [], seats: d.seats })
+    } catch (e) {
+      toast(e.message === 'You can only review matches you played.' ? 'Replays are stored for your own matches.' : e.message, 'error')
+    }
+  }
   return (
     <Card className="p-5">
       <p className="mb-3 text-xs font-bold uppercase tracking-wider text-ink-faint">Recent matches</p>
@@ -181,13 +192,34 @@ function RecentMatches({ history }) {
                 <span className="text-lg">{art.emoji}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-bold">{GAME_NAMES[m.game] || m.game}</p>
-                  <p className="text-[10px] text-ink-faint">{timeAgo(m.ended_at || m.started_at)} · {m.mode === 'bot' ? 'vs bot' : 'online match'}</p>
+                  <p className="text-[10px] text-ink-faint">
+                    {timeAgo(m.ended_at || m.started_at)} · {m.mode === 'bot' ? 'vs bot' : 'online match'}
+                    {m.ranked ? ' · ranked' : ' · casual'}
+                  </p>
                 </div>
                 <span className={`text-[11px] font-semibold ${m.rating_delta >= 0 ? 'text-emerald-soft' : 'text-red-300'}`}>{m.rating_delta >= 0 ? '+' : ''}{m.rating_delta} elo</span>
                 <Badge tone={tone} className="w-[52px] justify-center">{m.result === 'win' ? 'Win' : m.result === 'draw' ? 'Draw' : 'Loss'}</Badge>
+                {canReview && (
+                  <button onClick={() => openReview(m.id, m.game)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-bold text-ink-faint transition hover:border-emerald-neon/40 hover:text-emerald-soft cursor-pointer"
+                    title="Step through every move">
+                    Replay
+                  </button>
+                )}
               </div>
             )
           })}
+        </div>
+      )}
+      {review && (
+        <div className="fixed inset-0 z-[80] overflow-y-auto bg-[#050807]/97 p-4 md:p-8">
+          <MatchReview
+            gameId={review.gameId}
+            moves={review.moves}
+            seats={review.seats}
+            theme={review.gameId === 'reversi' ? (localStorage.getItem('gh:board-theme-reversi') ? JSON.parse(localStorage.getItem('gh:board-theme-reversi')) : 'emerald') : 'emerald'}
+            onClose={() => setReview(null)}
+          />
         </div>
       )}
     </Card>

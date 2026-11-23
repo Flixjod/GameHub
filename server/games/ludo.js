@@ -52,10 +52,10 @@ export function ludoLegalMovesForTurn(state, playerIdx) {
   return legalLudoMoves(state, playerIdx, state.roll)
 }
 
-export function applyLudoRoll(state, playerIdx) {
+export function applyLudoRoll(state, playerIdx, presetRoll) {
   if (playerIdx !== state.turn) return { error: 'Not your turn.' }
   if (state.roll != null) return { error: 'Awaiting your token move.' }
-  const roll = 1 + Math.floor(Math.random() * 6)
+  const roll = presetRoll ?? 1 + Math.floor(Math.random() * 6)
   state.roll = roll
   if (roll === 6) {
     state.sixStreak += 1

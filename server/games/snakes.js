@@ -20,7 +20,7 @@ export function snakesScore(state, playerIdx) {
 
 export function applySnakesMove(state, playerIdx, move) {
   if (playerIdx !== state.turn) return { error: 'Not your turn.' }
-  const roll = 1 + Math.floor(Math.random() * 6)
+  const roll = move?.roll ?? 1 + Math.floor(Math.random() * 6)
   state.lastRoll = roll
 
   let pos = state.tokens[playerIdx]

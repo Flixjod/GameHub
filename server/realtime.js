@@ -8,7 +8,8 @@ import { rooms, makeCode, roomSummary, publicRooms, persistRoom, deleteRoomRow, 
 
 export let io = null
 
-const matchmaking = new Map() // game -> [{userId, socketId}]
+const matchmaking = new Map() // `${game}:${mode}` -> [{userId, socketId, ts}]
+const MATCHMAKING_TIMEOUT = 3 * 60000
 
 const BOT_NAMES = { tictactoe: 'ByteBot', reversi: 'CornerBot', ludo: 'DiceBot', snakes: 'LadderBot' }
 const BOT_RATING = { tictactoe: 1000, reversi: 1150, ludo: 1080, snakes: 920 }
@@ -67,9 +68,12 @@ function startMatch(room) {
   const gameEngines = getRuntimeEngines(room.game)
   const seated = seatEntries(room)
   const state = gameEngines.create(seated.map(([key]) => key))
-  const m = db.prepare(`INSERT INTO matches (game, mode, player_count) VALUES (?,?,?)`).run(room.game, room.botSeat != null ? 'bot' : 'online', seated.length)
+  const m = db.prepare(`INSERT INTO matches (game, mode, player_count, ranked, started_at) VALUES (?,?,?,?,datetime('now'))`)
+    .run(room.game, room.botSeat != null ? 'bot' : 'online', seated.length, room.ranked ? 1 : 0)
   room.matchId = m.lastInsertRowid
   room.state = state
+  room.startedAt = Date.now()
+  room.history = []
   for (const [, p] of room.players) p.ready = false
   emitRoom(room, 'game:started', { code: room.code, game: room.game, state, seats: seatsPayload(room), turnSeat: state.turn })
   scheduleBot(room)
@@ -90,7 +94,9 @@ function endMatch(room, { winnerSeat, resignSeat = null, reason = '' } = {}) {
   const enginesMap = engines[room.game]
   const scores = seated.map(([, p], idx) => (enginesMap.scoreOf ? enginesMap.scoreOf(state, idx) : 0))
 
-  db.prepare(`UPDATE matches SET ended_at = datetime('now') WHERE id = ?`).run(room.matchId)
+  db.prepare(`UPDATE matches SET ended_at = datetime('now'), ended_reason = ?, duration_ms = ?, moves = ? WHERE id = ?`)
+    .run(reason || null, room.startedAt ? Date.now() - room.startedAt : null,
+      room.history?.length ? JSON.stringify(room.history) : null, room.matchId)
   const finishers = []
   seated.forEach(([key, p], idx) => {
     if (p.isBot) return
@@ -101,7 +107,7 @@ function endMatch(room, { winnerSeat, resignSeat = null, reason = '' } = {}) {
     let dRating = 0
     const xpDelta = result === 'win' ? 50 : result === 'draw' ? 25 : 10
     let ratingAfter = u.rating
-    if (result !== 'draw') {
+    if (result !== 'draw' && room.ranked) {
       const opp = seated[1 - idx === idx ? 0 : 1 - idx]
       const oppRating = opp && opp[1].isBot ? BOT_RATING[room.game] : opp && opp[1].user ? opp[1].user.rating : 1000
       const expected = 1 / (1 + 10 ** ((oppRating - u.rating) / 400))
@@ -139,7 +145,11 @@ function endMatch(room, { winnerSeat, resignSeat = null, reason = '' } = {}) {
     result: winnerSeat == null ? 'draw' : winnerSeat === -1 || winnerSeat == null ? 'draw' : winnerSeat === idx ? 'win' : 'loss',
     score: scores[idx],
   }))
-  emitRoom(room, 'game:over', { code: room.code, seats: seatsOut, finishers, reason })
+  emitRoom(room, 'game:over', {
+    code: room.code, seats: seatsOut, finishers, reason,
+    ranked: !!room.ranked, durationMs: room.startedAt ? Date.now() - room.startedAt : 0,
+    history: room.history || [],
+  })
   room.state = null
   room.matchId = null
   broadcastRoomList()
@@ -163,7 +173,7 @@ function scheduleBot(room) {
     } else if (eng.dice) {
       doRoll(room, room.botSeat)
     } else {
-      const mv = eng.bot(room.state, room.botSeat, 'best')
+      const mv = eng.bot(room.state, room.botSeat, room.botDifficulty || 'best')
       if (mv == null) {
         if (eng.pass) doPass(room, room.botSeat)
       } else {
@@ -182,6 +192,7 @@ function doRoll(room, seatIdx) {
   const res = eng.roll(room.state, seatIdx)
   if (res.error) { emitRoom(room, 'game:error', { code: room.code, error: res.error, seat: seatIdx }); return }
   if (res.finished) return endMatch(room, { winnerSeat: seatIdx })
+  room.history?.push({ seat: seatIdx, action: 'roll', roll: res.roll ?? null })
   sendState(room, { type: 'roll', roll: res.roll, again: !!res.again, blocked: !!res.blocked, forfeited: !!res.forfeited, message: res.message || null })
   scheduleBot(room)
 }
@@ -190,8 +201,10 @@ function doMove(room, seatIdx, move) {
   const eng = engines[room.game]
   const res = eng.apply(room.state, seatIdx, move)
   if (res.error) { emitRoom(room, 'game:error', { code: room.code, error: res.error, seat: seatIdx }); return }
+  room.history?.push({ seat: seatIdx, action: 'move', move, flips: res.flips || res.captured || null, by: { seat: seatIdx } })
   if (res.finished) return endMatch(room, { winnerSeat: seatIdx })
-  sendState(room, { type: 'move', move, captured: res.captured ?? null, forcedSkip: !!res.forcedSkip, passed: !!res.passed, again: !!res.again })
+  if (res.forcedSkip && room.history) room.history.push({ seat: 1 - seatIdx, action: 'pass', move: null })
+  sendState(room, { type: 'move', move, flips: res.flips ?? null, captured: res.captured ?? null, forcedSkip: !!res.forcedSkip, passed: !!res.passed, again: !!res.again })
   scheduleBot(room)
 }
 
@@ -200,6 +213,8 @@ function doPass(room, seatIdx) {
   if (!eng.pass) return
   const res = eng.pass(room.state, seatIdx)
   if (res.error) { emitRoom(room, 'game:error', { code: room.code, error: res.error, seat: seatIdx }); return }
+  room.history?.push({ seat: seatIdx, action: 'pass', move: null })
+  if (res.finished) return endMatch(room, { winnerSeat: res.winnerIdx ?? -1 })
   sendState(room, { type: 'pass', seat: seatIdx })
   scheduleBot(room)
 }
@@ -267,42 +282,47 @@ export function initRealtime(httpServer) {
     socket.emit('init', { userId })
 
     // ---- matchmaking ----
-    socket.on('matchmaking:join', ({ game } = {}) => {
+    socket.on('matchmaking:join', ({ game, ranked = false } = {}) => {
       if (!GAMES[game]) return socket.emit('error:msg', { error: 'Unknown game.' })
       if (currentRoomOfUser(userId)) {
         for (const r of [...rooms.values()]) if (r.players.has(userId)) leaveRoom(socket, r)
       }
-      if (!matchmaking.has(game)) matchmaking.set(game, [])
-      const q = matchmaking.get(game)
-      if (q.some((e) => e.userId === userId)) return socket.emit('matchmaking:status', { game, state: 'queued' })
-      q.push({ userId, socketId: socket.id })
-      socket.emit('matchmaking:status', { game, state: 'queued' })
+      const queueKey = `${game}:${ranked ? 'ranked' : 'casual'}`
+      if (!matchmaking.has(queueKey)) matchmaking.set(queueKey, [])
+      const q = matchmaking.get(queueKey)
+      const now = Date.now()
+      while (q.length && now - q[0].ts > MATCHMAKING_TIMEOUT) q.shift()
+      if (q.some((e) => e.userId === userId)) return socket.emit('matchmaking:status', { game, mode: ranked ? 'ranked' : 'casual', state: 'queued' })
+      q.push({ userId, socketId: socket.id, ts: now })
+      socket.emit('matchmaking:status', { game, mode: ranked ? 'ranked' : 'casual', state: 'queued' })
       if (q.length >= 2) {
         const a = q.shift()
         const b = q.shift()
-        const room = createMatchRoom(game, a.userId, b.userId)
+        const room = createMatchRoom(game, a.userId, b.userId, ranked)
         const sa = io.sockets.sockets.get(a.socketId)
         if (sa) sa.join(room.code)
         socket.join(room.code)
-        io.to(room.code).emit('matchmaking:found', { code: room.code, game })
+        io.to(room.code).emit('matchmaking:found', { code: room.code, game, ranked: !!ranked })
         io.to(room.code).emit('room:update', roomSummary(room))
         broadcastRoomList()
         setTimeout(() => {
           const r = rooms.get(room.code)
           if (r && !r.state) startMatch(r)
-        }, 1800)
+        }, 2200)
       }
     })
 
     socket.on('matchmaking:cancel', ({ game } = {}) => {
-      if (matchmaking.has(game)) {
-        matchmaking.set(game, matchmaking.get(game).filter((e) => e.userId !== userId))
+      for (const [key, q] of matchmaking) {
+        if (key.startsWith(`${game}:`)) {
+          matchmaking.set(key, q.filter((e) => e.userId !== userId))
+        }
       }
       socket.emit('matchmaking:status', { game, state: 'idle' })
     })
 
     // ---- rooms ----
-    socket.on('room:create', ({ game, name, isPrivate, maxPlayers } = {}, cb) => {
+    socket.on('room:create', ({ game, name, isPrivate, maxPlayers, ranked } = {}, cb) => {
       if (!GAMES[game]) return cb?.({ error: 'Unknown game.' })
       leaveAllRooms(socket)
       const room = {
@@ -311,11 +331,14 @@ export function initRealtime(httpServer) {
         name: (name || `${GAMES[game].name} Room`).slice(0, 32),
         maxPlayers: Math.max(GAMES[game].minPlayers, Math.min(GAMES[game].maxPlayers, Number(maxPlayers) || GAMES[game].maxPlayers)),
         isPrivate: !!isPrivate,
+        ranked: !!ranked,
         hostId: userId,
         players: new Map(),
+        spectators: new Set(),
         state: null,
         matchId: null,
         botSeat: null,
+        botDifficulty: null,
         lastActivity: Date.now(),
       }
       room.players.set(userId, { user, ready: false, disconnected: false })
@@ -332,14 +355,23 @@ export function initRealtime(httpServer) {
       const room = rooms.get(norm)
       if (!room) return cb?.({ error: 'Room not found — it may have closed.' })
       if (room.isPrivate && room.hostId !== userId) return cb?.({ error: 'This room is private.' })
-      if (!room.players.has(userId) && room.players.size >= room.maxPlayers) {
+      if (!room.players.has(userId) && room.players.size >= room.maxPlayers && !room.state) {
         return cb?.({ error: `Room is full (${room.maxPlayers}/${room.maxPlayers} players).` })
       }
       leaveAllRooms(socket)
-      if (!room.players.has(userId)) room.players.set(userId, { user, ready: false, disconnected: false })
+      if (!room.players.has(userId)) {
+        if (room.state) {
+          room.spectators.add(userId)
+          socket.join(room.code)
+          cb?.({ ok: true, code: room.code, room: roomSummary(room), spectator: true, state: room.state, seatsInGame: seatsPayload(room) })
+          emitRoom(room, 'room:notice', { message: `${user.display_name} is now watching.` })
+          return
+        }
+        room.players.set(userId, { user, ready: false, disconnected: false })
+      }
       socket.join(room.code)
       persistRoom(room)
-      cb?.({ ok: true, code: room.code, room: roomSummary(room), state: room.state, seatsInGame: room.state ? seatsPayload(room) : null })
+      cb?.({ ok: true, code: room.code, room: roomSummary(room), spectator: room.spectators.has(userId), state: room.state, seatsInGame: room.state ? seatsPayload(room) : null })
       emitRoom(room, 'room:update', roomSummary(room))
       broadcastRoomList()
     })
@@ -362,10 +394,11 @@ export function initRealtime(httpServer) {
       if (seated.length >= 2 && allReady) startMatch(room)
     })
 
-    socket.on('room:add-bot', ({ code } = {}) => {
+    socket.on('room:add-bot', ({ code, difficulty } = {}) => {
       const room = rooms.get(String(code || '').toUpperCase())
       if (!room || room.state) return
       if (room.hostId !== userId) return socket.emit('error:msg', { error: 'Only the host can add a bot.' })
+      if (difficulty && ['easy', 'normal', 'best'].includes(difficulty)) room.botDifficulty = difficulty
       if (room.players.size >= room.maxPlayers) return socket.emit('error:msg', { error: 'Room is full.' })
       room.botSeat = room.players.size
       room.players.set('bot', { user: botUser(room.game), ready: true, isBot: true, disconnected: false })
@@ -380,6 +413,7 @@ export function initRealtime(httpServer) {
       if (room.players.has('bot')) {
         room.players.delete('bot')
         room.botSeat = null
+        room.botDifficulty = null
         persistRoom(room)
         emitRoom(room, 'room:update', roomSummary(room))
         broadcastRoomList()
@@ -448,6 +482,7 @@ export function initRealtime(httpServer) {
     socket.on('disconnect', () => {
       const stillOnline = !!io.sockets.adapter.rooms.get(`user:${userId}`)?.size
       if (!stillOnline) io.emit('presence', { userId, online: false })
+      for (const room of rooms.values()) room.spectators?.delete(userId)
       for (const room of rooms.values()) {
         const p = room.players.get(userId)
         if (!p) continue
@@ -499,15 +534,18 @@ function advanceNoRoll(room, seatIdx) {
   scheduleBot(room)
 }
 
-function createMatchRoom(game, hostUserId, guestUserId) {
+function createMatchRoom(game, hostUserId, guestUserId, ranked = false) {
   const host = db.prepare('SELECT * FROM users WHERE id = ?').get(hostUserId)
   const guest = db.prepare('SELECT * FROM users WHERE id = ?').get(guestUserId)
   const room = {
     code: makeCode(),
     game,
-    name: `${GAMES[game].name} Match`,
+    name: `${GAMES[game].name} ${ranked ? 'Ranked' : 'Casual'} Match`,
     maxPlayers: GAMES[game].maxPlayers,
     isPrivate: false,
+    ranked: !!ranked,
+    startedAt: null,
+    history: [],
     hostId: hostUserId,
     players: new Map(),
     state: null,
@@ -524,8 +562,14 @@ function createMatchRoom(game, hostUserId, guestUserId) {
 
 export function leaveRoom(socket, room) {
   const user = socket.data.user
+  if (room.spectators?.delete(user.id)) {
+    socket.leave(room.code)
+    socket.emit('room:left', { code: room.code })
+    return
+  }
   if (!room.players.has(user.id)) return
   const wasPlaying = !!room.state
+  const seatIdx = seatOf(room, user.id)
   room.players.delete(user.id)
   socket.leave(room.code)
   room.lastActivity = Date.now()
@@ -535,9 +579,14 @@ export function leaveRoom(socket, room) {
   if (!room.players.size) {
     rooms.delete(room.code)
     deleteRoomRow(room.code)
-  } else if (wasPlaying) {
-    const humans = [...room.players.values()].filter((p) => !p.isBot)
-    if (!humans.length) { room.state = null; room.matchId = null }
+  } else if (wasPlaying && room.state) {
+    const remaining = seatEntries(room).map(([k], idx) => idx)
+    if (seatIdx != null && remaining.length) {
+      endMatch(room, { winnerSeat: remaining[0], resignSeat: seatIdx, reason: 'leave' })
+    } else if (seatIdx != null) {
+      room.state = null; room.matchId = null
+      emitRoom(room, 'room:notice', { message: 'Match abandoned.' })
+    }
   }
   broadcastRoomList()
   if (room.state && room.botSeat === room.state.turn) scheduleBot(room)

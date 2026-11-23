@@ -21,6 +21,7 @@ export function roomSummary(room) {
     gameName: getGame(room.game)?.name || room.game,
     maxPlayers: room.maxPlayers,
     isPrivate: room.isPrivate,
+    ranked: !!room.ranked,
     hostId: room.hostId,
     hasBot: room.botSeat != null,
     inGame: !!room.state,

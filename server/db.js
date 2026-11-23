@@ -37,6 +37,12 @@ CREATE TABLE IF NOT EXISTS users (
   snakes_wins INTEGER DEFAULT 0,
   tournaments_joined INTEGER DEFAULT 0,
   settings TEXT DEFAULT '{}',
+  email TEXT DEFAULT '',
+  email_verified INTEGER DEFAULT 0,
+  verification_token TEXT,
+  reset_token TEXT,
+  reset_expires TEXT,
+  is_guest INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   last_seen TEXT DEFAULT (datetime('now'))
 );
@@ -59,8 +65,12 @@ CREATE TABLE IF NOT EXISTS matches (
   game TEXT NOT NULL,
   mode TEXT DEFAULT 'online',
   player_count INTEGER DEFAULT 2,
+  ranked INTEGER DEFAULT 1,
   started_at TEXT DEFAULT (datetime('now')),
-  ended_at TEXT
+  ended_at TEXT,
+  ended_reason TEXT,
+  duration_ms INTEGER,
+  moves TEXT
 );
 CREATE TABLE IF NOT EXISTS match_results (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,6 +163,24 @@ CREATE TABLE IF NOT EXISTS room_players (
   PRIMARY KEY (room_id, user_id)
 );
 `)
+
+// Light migrations for databases created by earlier revisions.
+function ensureColumn(table, column, decl) {
+  const cols = db.pragma(`table_info(${table})`)
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`)
+}
+try {
+  ensureColumn('users', 'email', "TEXT DEFAULT ''")
+  ensureColumn('users', 'email_verified', 'INTEGER DEFAULT 0')
+  ensureColumn('users', 'verification_token', 'TEXT')
+  ensureColumn('users', 'reset_token', 'TEXT')
+  ensureColumn('users', 'reset_expires', 'TEXT')
+  ensureColumn('users', 'is_guest', 'INTEGER DEFAULT 0')
+  ensureColumn('matches', 'ranked', 'INTEGER DEFAULT 1')
+  ensureColumn('matches', 'ended_reason', 'TEXT')
+  ensureColumn('matches', 'duration_ms', 'INTEGER')
+  ensureColumn('matches', 'moves', 'TEXT')
+} catch { /* fresh schema already has them */ }
 
 // ---------------- helpers ----------------
 export function levelFromXp(xp) {

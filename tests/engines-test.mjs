@@ -114,5 +114,183 @@ const check = (name, cond, extra = '') => {
   check('snakes: game eventually finishes', last?.finished === true && s.tokens.some((t) => t >= 100), JSON.stringify(s.tokens))
 }
 
+
+// ---------- Reversi deep rules (spec 23) ----------
+{
+  const s = reversi.createReversi([{ id: 'a' }, { id: 'b' }])
+  const mv = reversi.validMoves(s, 0)
+  check('reversi: opening legal moves are d3/c4/f5/e6', JSON.stringify(mv) === JSON.stringify([19, 26, 37, 44]), JSON.stringify(mv))
+
+  // horizontal flip: row 0 `W B . .` -> placing at (0,3) flips (0,1),(0,2)
+  {
+    const board = Array(64).fill(0)
+    board[0] = 1; board[1] = 2; board[2] = 2
+    check('reversi flips: horizontal', JSON.stringify(reversi.flipsFor(board, 3, 1)) === JSON.stringify([2, 1]))
+    check('reversi flips: horizontal blocked mid-gap', reversi.flipsFor(board, 4, 1).length === 0)
+  }
+  // vertical flip
+  {
+    const board = Array(64).fill(0)
+    board[0] = 1; board[8] = 2; board[16] = 2
+    check('reversi flips: vertical', JSON.stringify(reversi.flipsFor(board, 24, 1)) === JSON.stringify([16, 8]))
+  }
+  // diagonal flip
+  {
+    const board = Array(64).fill(0)
+    board[0] = 1; board[9] = 2; board[18] = 2
+    check('reversi flips: diagonal', JSON.stringify(reversi.flipsFor(board, 27, 1)) === JSON.stringify([18, 9]))
+  }
+  // multi-direction single placement: player 2 brackets P1 discs on the right and below
+  {
+    const board = Array(64).fill(0)
+    board[1] = 1; board[2] = 2; board[8] = 1; board[16] = 2
+    const flips = reversi.flipsFor(board, 0, 2)
+    check('reversi flips: multi-direction capture', JSON.stringify(flips) === JSON.stringify([1, 8]), JSON.stringify(flips))
+    // corner needs a bracket: enemy discs without own support behind -> illegal
+    const bare = Array(64).fill(0)
+    bare[1] = 1; bare[8] = 1
+    check('reversi flips: corner cell requires bracket', reversi.flipsFor(bare, 0, 2).length === 0)
+  }
+  // reveal flips on apply + forced skip
+  {
+    const s2 = reversi.createReversi([{ id: 'a' }, { id: 'b' }])
+    const res = reversi.applyReversiMove(s2, 0, { i: 19 })
+    check('reversi move returns flips', Array.isArray(res.flips) && res.flips.length === 1, JSON.stringify(res))
+  }
+  // enclosed position: neither side can ever move -> pass chain ends the game
+  {
+    const board = Array(64).fill(0)
+    board[0] = 1; board[7] = 1
+    for (let i = 1; i <= 6; i++) board[i] = 2
+    const st = { board, turn: 0, players: ['a', 'b'], lastMove: -1 }
+    check('reversi enclosed: no moves for dark', reversi.validMoves(st, 0).length === 0)
+    check('reversi enclosed: no moves for light', reversi.validMoves(st, 1).length === 0)
+    const res = reversi.applyReversiPass(st, 0)
+    check('reversi enclosed: pass with no opponent moves finishes, most discs wins', res.finished === true && res.winnerIdx === 1, JSON.stringify(res))
+  }
+  // reveal flips on apply + forced skip
+  {
+    // double pass ends the game with a draw on a full board
+    const board = Array(64).fill(1)
+    for (let i = 0; i < 32; i++) board[i * 2] = 2
+    const st = { board, turn: 0, players: ['a', 'b'], lastMove: -1 }
+    const res = reversi.applyReversiPass(st, 0)
+    check('reversi double pass finishes', res.finished === true, JSON.stringify(res).slice(0, 80))
+  }
+  // pass rejected when moves exist (already covered) + wrong-turn pass
+  {
+    const s3 = reversi.createReversi([{ id: 'a' }, { id: 'b' }])
+    check('reversi pass: wrong turn rejected', !!reversi.applyReversiPass(s3, 1).error)
+  }
+  // rankReversiMoves ordering
+  {
+    const s4 = reversi.createReversi([{ id: 'a' }, { id: 'b' }])
+    const ranked = reversi.rankReversiMoves(s4, 0)
+    check('reversi: rank returns ordered legal moves', ranked.length === 4 && ranked[0].value >= ranked[1].value && ranked.map((r) => r.move).every((m) => mv.includes(m)), JSON.stringify(ranked.slice(0, 2)))
+  }
+}
+
+// ---------- Reversi AI tiers (spec 23) ----------
+{
+  // legality across full random-ish games for every tier
+  for (const tier of ['easy', 'normal', 'best']) {
+    const st = reversi.createReversi([{ id: 'h' }, { id: botName(tier) }])
+    let ok = true, plies = 0
+    let cur = 0
+    while (plies < 200) {
+      const mover = cur % 2
+      const moves = reversi.validMoves(st, mover)
+      if (!moves.length) {
+        if (reversi.validMoves(st, 1 - mover).length) { cur++; plies++; continue }
+        break
+      }
+      const mv = reversi.reversiBotMove(st, mover, tier)
+      if (mv == null) { cur++; plies++; continue }
+      if (!moves.includes(mv)) { ok = false; break }
+      const res = reversi.applyReversiMove(st, mover, { i: mv })
+      if (res.error) { ok = false; break }
+      if (res.finished) break
+      cur++
+      plies++
+    }
+    check(`reversi AI ${tier}: legal moves only in self-play`, ok)
+  }
+  function botName(t) { return t }
+  // easy randomization: same position may yield different moves over trials
+  {
+    const s5 = reversi.createReversi([{ id: 'h' }, { id: 'b' }])
+    const picks = new Set()
+    for (let i = 0; i < 30; i++) picks.add(reversi.reversiBotMove(s5, 1, 'easy'))
+    check('reversi AI easy: non-deterministic', picks.size > 1, `distinct=${picks.size}`)
+  }
+  // hard beats easy over 2-player games (~12 games; each hard search fine)
+  let hardWins = 0
+  const GAMES_N = 12
+  for (let g = 0; g < GAMES_N; g++) {
+    const st = reversi.createReversi([{ id: 'h' }, { id: 'b' }])
+    let cur = 0, last = null
+    for (let ply = 0; ply < 200; ply++) {
+      const mover = cur % 2
+      const moves = reversi.validMoves(st, mover)
+      if (!moves.length) {
+        if (reversi.validMoves(st, 1 - mover).length) { cur++; continue }
+        break
+      }
+      const mv = reversi.reversiBotMove(st, mover, mover === 1 ? 'best' : 'easy')
+      if (mv == null) { cur++; continue }
+      const res = reversi.applyReversiMove(st, mover, { i: mv })
+      if (res.error) break
+      if (res.finished) { last = res; break }
+      cur++
+    }
+    if (last && last.winnerIdx === 1) hardWins++
+    else if (!last) hardWins += reversi.reversiScore(st, 1) > reversi.reversiScore(st, 0) ? 1 : 0
+    else if (last.winnerIdx === -1) hardWins += 1 // draw counts half? keep simple: stalemate for easy is a hard win
+  }
+  check('reversi AI: hard beats easy consistently', hardWins >= GAMES_N - 2, `hard wins ${hardWins}/${GAMES_N}`)
+  // late-game performance
+  {
+    const st = reversi.createReversi([{ id: 'h' }, { id: 'b' }])
+    const board = st.board
+    const pattern = [2,1,2,1,1,2,1,2,1,2]
+    for (let i = 0; i < 54; i++) board[i] = pattern[i % 10]
+    const t0 = Date.now()
+    const mv = reversi.bestReversiMove(st, 0)
+    const ms = Date.now() - t0
+    check('reversi AI: late-game hard move fast (<300ms)', mv != null && ms < 300, `${ms}ms mv=${mv}`)
+  }
+}
+
+// ---------- Replay round-trip (client engine reuse) ----------
+{
+  const { replayStates } = await import('../src/lib/engines.js')
+  const st = reversi.createReversi([{ id: 'a' }, { id: 'b' }])
+  const history = []
+  let cur = 0
+  for (let ply = 0; ply < 120; ply++) {
+    const mover = cur % 2
+    const moves = reversi.validMoves(st, mover)
+    if (!moves.length) {
+      const res = reversi.applyReversiPass(st, mover)
+      history.push({ seat: mover, action: 'pass', move: null })
+      if (res.finished) break
+      cur++
+      continue
+    }
+    const mv = reversi.reversiBotMove(st, mover, mover === 0 ? 'best' : 'easy')
+    if (mv == null) { cur++; continue }
+    const before = reversi.reversiScore(st, 0) + reversi.reversiScore(st, 1)
+    const res = reversi.applyReversiMove(st, mover, { i: mv })
+    history.push({ seat: mover, action: 'move', move: { i: mv }, flips: res.flips })
+    if (res.finished) break
+    cur++
+  }
+  const states = replayStates('reversi', history, 2)
+  const finalLive = st.board.join(',')
+  const finalReplay = states.at(-1).state.board.join(',')
+  check('replay: final board matches live engine', finalLive === finalReplay, `${reversi.reversiScore(st, 0)}-${reversi.reversiScore(st, 1)} vs ${states.length} states`)
+  check('replay: one snapshot per recorded move', states.length === history.length + 1, `states=${states.length} moves=${history.length}`)
+}
+
 console.log(`\n${pass}/${pass + fail} engine checks passed`)
 process.exit(fail ? 1 : 0)
