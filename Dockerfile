@@ -14,5 +14,5 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY server ./server
 COPY --from=build /app/dist ./dist
-EXPOSE 8000
+EXPOSE 8080
 CMD ["sh", "-c", "node server/ensureSeed.js && exec node server/index.js"]
