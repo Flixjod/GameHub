@@ -1,0 +1,42 @@
+# GameHub — runtime data and build output are never committed.
+# See README.md, “What is not in this repo”.
+
+# Per-artifact SQLite database and WAL sidecars (live player data)
+app.db
+app.db-shm
+app.db-wal
+app.db*
+
+# Dependencies
+node_modules/
+
+# Built client
+client/dist/
+client/dist-cvm/
+
+# Built server
+server/dist/
+
+# Hatch build staging
+.space-build/
+.space-build-cvm/
+
+# Build audits (captures and screenshots)
+audits/
+
+# Built JS/CSS bundles
+*.min.js
+*.min.css
+*.bundle.js
+*.bundle.css
+client/dist/**/*.js
+client/dist/**/*.css
+client/dist-cvm/**/*.js
+client/dist-cvm/**/*.css
+server/dist/**/*.js
+
+# Bun per-space install cache (see bunfig.toml)
+.bun-cache/
+
+# OS / editor noise
+.DS_Store
