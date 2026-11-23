@@ -22,8 +22,6 @@ export function useRooms() {
 
 export function GameCard({ game, more, onClick }) {
   const navigate = useNavigate()
-  const art = GAME_ART[game.id] || GAME_ART.more
-  const Icon = art.icon
 
   if (more) {
     return (
@@ -42,6 +40,9 @@ export function GameCard({ game, more, onClick }) {
       </Card>
     )
   }
+
+  const art = GAME_ART[game?.id] || GAME_ART.more
+  const Icon = art.icon
 
   return (
     <Card className="group relative flex flex-col overflow-hidden p-0 transition-all duration-300 hover:-translate-y-1.5 hover:border-emerald-neon/40 hover:shadow-[0_20px_50px_-20px_rgba(16,229,138,.35)]">
