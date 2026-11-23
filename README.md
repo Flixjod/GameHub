@@ -61,3 +61,21 @@ npx vite build                # frontend production build
 ```bash
 node server/seed.js
 ```
+
+## Deployment (Koyeb / any Docker host)
+
+The repo ships a multi-stage `Dockerfile`: stage 1 installs all deps and builds the frontend (`vite build`), stage 2 installs production dependencies only and copies `server/` + `dist/`. On boot the container seeds the SQLite database **only if it is empty** (`server/ensureSeed.js`), so restarts and redeploys never wipe player data.
+
+### Deploy to Koyeb
+
+1. In the [Koyeb console](https://app.koyeb.com) create a new **Web Service**, choose **GitHub** as the source and pick this repository.
+2. Koyeb detects the `Dockerfile` automatically. Use these settings:
+   - **Port**: `8000` (Koyeb sets the `PORT` env var; the server reads it - override by setting `PORT` manually if needed)
+   - **Health check**: HTTP GET `/api/games` (instant 200, no auth required)
+3. Set these environment variables:
+   - `JWT_SECRET` - a long random value; sessions invalidate if it changes
+4. Deploy. One container serves the API, websockets (same origin), and the built frontend - no separate database host needed.
+
+### Persistent data
+
+SQLite lives at `/app/data` by default. Koyeb's default filesystem is **ephemeral** - an unrelated redeploy resets accounts, match history, and ratings. To persist it, attach a Koyeb **Volume** and point the app at it via `DATA_DIR` (e.g. `/var/lib/koyeb/volumes/gamehub/data`). Migrations are schema-safe: tables are created on boot if missing.

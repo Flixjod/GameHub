@@ -32,7 +32,10 @@ app.use((err, req, res, next) => {
 if (process.env.NODE_ENV === 'production') {
   const dist = path.join(__dirname, '..', 'dist')
   app.use(express.static(dist))
-  app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')))
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next()
+    res.sendFile(path.join(dist, 'index.html'))
+  })
 }
 
 initRealtime(server)
