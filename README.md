@@ -70,7 +70,7 @@ The repo ships a multi-stage `Dockerfile`: stage 1 installs all deps and builds 
 
 1. In the [Koyeb console](https://app.koyeb.com) create a new **Web Service**, choose **GitHub** as the source and pick this repository.
 2. Koyeb detects the `Dockerfile` automatically. Use these settings:
-   - **Port**: `8000` (Koyeb sets the `PORT` env var; the server reads it - override by setting `PORT` manually if needed)
+   - **Port**: `8080` (the Dockerfile `EXPOSE`s 8080; the server binds whatever Koyeb sets in the `PORT` env var - keep the console port and `EXPOSE` in agreement)
    - **Health check**: HTTP GET `/api/games` (instant 200, no auth required)
 3. Set these environment variables:
    - `JWT_SECRET` - a long random value; sessions invalidate if it changes
