@@ -72,10 +72,6 @@ export default function Home() {
           </section>
 
           <section>
-            <div className="mb-4">
-              <h3 className="text-[19px] font-bold">Live Rooms</h3>
-              <p className="mt-0.5 text-xs text-ink-faint">Capacity-checked joining — hop in or start your own</p>
-            </div>
             <LiveRooms />
           </section>
         </div>

@@ -13,7 +13,8 @@ import ReversiBoard from '../components/boards/ReversiBoard.jsx'
 import LudoBoard from '../components/boards/LudoBoard.jsx'
 import SnakesBoard from '../components/boards/SnakesBoard.jsx'
 import { GAME_ART } from '../components/GameArt.jsx'
-import { useRooms, ModeCard } from '../components/GameCard.jsx'
+import { useRooms } from '../components/GameCard.jsx'
+import { GameModeStage } from '../components/GamePreview.jsx'
 import LocalMatch, { BoardThemePicker } from '../components/game/LocalMatch.jsx'
 import { ENGINES } from '../lib/engines.js'
 import MatchReview from '../components/game/MatchReview.jsx'
@@ -249,6 +250,9 @@ export default function Play() {
     } else if (params.get('mode') === 'local') {
       autoFlowDone.current = true
       setModePanel('local')
+    } else if (['online', 'local', 'ai'].includes(params.get('panel'))) {
+      autoFlowDone.current = true
+      setModePanel(params.get('panel'))
     }
   }, [socket, user, params, gameId, toast])
 
@@ -371,12 +375,8 @@ export default function Play() {
       {phase === 'lobby' && !modePanel && (
         <div className="space-y-5 animate-fade-in">
           {isReversi && <ReversiHero user={user} winRate={winRate} onPlay={() => setModePanel('online')} />}
+          <GameModeStage gameId={gameId} onMode={setModePanel} bare noPreview={isReversi} />
           {isReversi && <ReversiLobbyExtras rulesOpen={rulesOpen} setRulesOpen={setRulesOpen} recentLocal={recentLocal} />}
-          <div className="stagger grid gap-4 md:grid-cols-3">
-            <ModeCard icon={Globe2} title="Online" bullets={['Ranked Match', 'Casual Match', 'Find Opponent', 'Create / Join Room']} tone="emerald" onClick={() => setModePanel('online')} />
-            <ModeCard icon={WifiOff} title="Offline" bullets={['Pass & Play', 'Local 2 Player', 'No account or internet']} tone="cyan" onClick={() => setModePanel('local')} />
-            <ModeCard icon={Cpu} title="vs AI" bullets={['Easy — Casual', 'Medium — Strategist', 'Hard — Master']} tone="royal" onClick={() => setModePanel('ai')} />
-          </div>
         </div>
       )}
 

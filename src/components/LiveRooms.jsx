@@ -6,7 +6,7 @@ import { useRooms } from './GameCard.jsx'
 import { GAME_ART } from './GameArt.jsx'
 import { useSocket } from '../store.jsx'
 
-export function LiveRooms({ compact = false, id = 'rooms' }) {
+export function LiveRooms({ compact = false, id = 'rooms', game = null }) {
   const rooms = useRooms()
   const navigate = useNavigate()
   const { socket } = useSocket()
@@ -28,7 +28,7 @@ export function LiveRooms({ compact = false, id = 'rooms' }) {
     navigate(`/play/tictactoe?room=${code}&check=1`)
   }
 
-  const visible = (compact ? rooms.slice(0, 4) : rooms).filter((r) => !r.isPrivate)
+  const visible = (compact ? rooms.slice(0, 4) : rooms).filter((r) => !r.isPrivate && (!game || r.game === game))
 
   return (
     <Card className="p-5" id={id}>
