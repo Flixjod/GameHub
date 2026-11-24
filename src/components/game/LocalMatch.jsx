@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Undo2, RotateCcw, Bot, Eye, Swords, ArrowLeft } from 'lucide-react'
+import { Undo2, RotateCcw, Bot, Eye, Swords, ArrowLeft, History } from 'lucide-react'
 import { ENGINES } from '../../lib/engines.js'
 import { usePref } from '../../lib/prefs.js'
 import ReversiBoard, { BOARD_THEMES } from '../boards/ReversiBoard.jsx'
@@ -7,9 +7,11 @@ import TicTacToeBoard from '../boards/TicTacToeBoard.jsx'
 import LudoBoard, { Dice, LUDO_MAPS } from '../boards/LudoBoard.jsx'
 import SnakesBoard, { SNAKE_MAPS } from '../boards/SnakesBoard.jsx'
 import MatchReview from './MatchReview.jsx'
-import { Button, Modal } from '../UI.jsx'
+import { Button, Modal, Card } from '../UI.jsx'
+import { logText } from '../../lib/helpers.js'
 
 const clone = (st) => structuredClone(st)
+const LOG_SEAT_COLORS = ['#34d399', '#22d3ee', '#fbbf24', '#f472b6']
 export const DIFFICULTIES = {
   easy: { label: 'Easy', sub: 'Casual — makes human mistakes' },
   normal: { label: 'Medium', sub: 'Strategist — positional play' },
@@ -78,7 +80,10 @@ export default function LocalMatch({ gameId, mode, config, onExit }) {
     const seat = stateRef.current.turn
     const res = commit({ seat, action: 'move', move: mv }, (st) => eng.apply(st, seat, mv))
     if (res?.error) return
-    if (gameId === 'reversi') setLastFlips(res.flips || [])
+    if (gameId === 'reversi') {
+      setLastFlips(res.flips || [])
+      setMoves((m) => m.map((e, idx) => (idx === m.length - 1 && e.action === 'move' ? { ...e, flips: (res.flips || []).length } : e)))
+    }
   }, [result, eng, commit, gameId])
 
   const onPass = useCallback(() => {
@@ -152,12 +157,15 @@ export default function LocalMatch({ gameId, mode, config, onExit }) {
           const move = typeof mv === 'number' ? { i: mv } : mv
           const res = eng.apply(st, aiSeat, move)
           entry = { seat: aiSeat, action: 'move', move }
-          if (gameId === 'reversi' && res?.flips) setLastFlips(res.flips)
+          if (gameId === 'reversi' && res?.flips) {
+            setLastFlips(res.flips)
+            entry.flips = (res.flips || []).length
+          }
           if (res?.finished) setTimeout(() => finishRef.current(res, [...movesRef.current, entry]), 0)
         }
       }
       setState(clone(st))
-      if (entry && !reversed) setMoves((m) => m.map((e, idx) => (idx === m.length - 1 && e.action === 'roll' && entry.action === 'roll' ? { ...e, roll: entry.roll } : e)))
+      if (entry && !reversed) setMoves((m) => m.map((e, idx) => (idx === m.length - 1 && e.action === 'roll' && entry.action === 'roll' ? { ...e, roll: entry.roll, flips: entry.flips } : e)))
       if (entry && entry.action !== 'roll') setMoves((m) => [...m, entry])
       setThinking(false)
     }, 600 + Math.random() * 500)
@@ -196,6 +204,9 @@ export default function LocalMatch({ gameId, mode, config, onExit }) {
           <p className="text-xs text-ink-faint">{isAi ? DIFFICULTIES[config.difficulty]?.sub : 'Two players, one device'}</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {gameId === 'reversi' && eng.valid && (
+            <span className="text-[10px] font-semibold text-ink-faint">{eng.valid(state, state.turn).length} legal moves</span>
+          )}
           {isAi && thinking && (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-royal/40 bg-royal/10 px-3 py-1 text-[11px] font-semibold text-[#c4b5fd]">
               <Bot size={13} className="animate-pulse" /> AI thinking<span className="animate-pulse">…</span>
@@ -232,6 +243,20 @@ export default function LocalMatch({ gameId, mode, config, onExit }) {
         <div className="flex justify-center">
           <Dice roll={state.roll} canRoll={false} rolling={lastEvent?.type === 'roll'} />
         </div>
+      )}
+
+      {moves.length > 0 && !result && (
+        <Card className="p-4">
+          <h4 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-ink-faint"><History size={13} /> Match log</h4>
+          <div className="max-h-[170px] space-y-1.5 overflow-y-auto pr-1 font-mono text-[11px] scrollbar-thin-dark" aria-live="polite">
+            {moves.map((e, i) => (
+              <p key={i} className="flex items-baseline gap-2">
+                <span className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: LOG_SEAT_COLORS[(e.seat ?? 0) % 4] }} />
+                <span className="text-ink-dim">{seatLabel(e.seat)} {logText(gameId, { type: e.action, roll: e.roll, move: e.move, flips: e.flips })}</span>
+              </p>
+            ))}
+          </div>
+        </Card>
       )}
 
       <div className="flex flex-wrap justify-center gap-2">

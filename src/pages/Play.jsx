@@ -15,8 +15,10 @@ import SnakesBoard from '../components/boards/SnakesBoard.jsx'
 import { GAME_ART } from '../components/GameArt.jsx'
 import { useRooms, ModeCard } from '../components/GameCard.jsx'
 import LocalMatch, { BoardThemePicker } from '../components/game/LocalMatch.jsx'
+import { ENGINES } from '../lib/engines.js'
 import MatchReview from '../components/game/MatchReview.jsx'
 import { usePref } from '../lib/prefs.js'
+import { logText } from '../lib/helpers.js'
 
 const GAME_META = {
   tictactoe: { name: 'TicTacToe', tagline: 'Think. Win.' },
@@ -69,6 +71,7 @@ export default function Play() {
   const [result, setResult] = useState(null)
   const [notice, setNotice] = useState(null)
   const [chat, setChat] = useState([])
+  const [log, setLog] = useState([])
   const [turnClock, setTurnClock] = useState(TURN_SECONDS)
   const [spectator, setSpectator] = useState(false)
   const [review, setReview] = useState(null) // { moves, seats }
@@ -95,7 +98,7 @@ export default function Play() {
   const reset = useCallback(() => {
     setRoom(null); setGameState(null); setSeats(null); setTurnSeat(null)
     setLastEvent(null); setResult(null); setNotice(null); setChat([])
-    setLastError(null); setSpectator(false); setFound(null)
+    setLastError(null); setSpectator(false); setFound(null); setLog([])
   }, [])
 
   // -------- socket events --------
@@ -115,6 +118,7 @@ export default function Play() {
       setTurnSeat(d.turnSeat)
       setResult(null)
       setLastEvent(null)
+      setLog([{ seat: d.turnSeat, text: 'Match started — good luck' }])
       toast('Match started — good luck! ⚔️', 'success')
     }
     const onMatchFound = (d) => {
@@ -125,8 +129,10 @@ export default function Play() {
     }
     const onGameState = (d) => {
       if (!stateRef.current.room || stateRef.current.room.code !== d.code) return
+      const prevTurn = stateRef.current.turnSeat
       setGameState(d.state)
       setTurnSeat(d.turnSeat)
+      if (d.event) setLog((l) => [...l.slice(-29), { seat: d.event.seat ?? prevTurn, ev: d.event }].slice(-30))
       if (d.event) setLastEvent(d.event)
     }
     const onGameOver = (d) => {
@@ -324,6 +330,11 @@ export default function Play() {
 
   const art = GAME_ART[gameId] || GAME_ART.more
   const winRate = user && user.gamesPlayed ? Math.round((user.wins / user.gamesPlayed) * 100) : 0
+  const matchTheme = isReversi ? boardTheme : gameId === 'ludo' ? ludoMap : gameId === 'snakes' ? snakesMap : 'emerald'
+  const setMatchTheme = isReversi ? setBoardTheme : gameId === 'ludo' ? setLudoMap : setSnakesMap
+  const themeCtl = gameId === 'reversi' || gameId === 'ludo' || gameId === 'snakes'
+    ? { value: matchTheme, setTheme: setMatchTheme, gameId }
+    : null
 
   const backFromPanel = () => setModePanel(null)
 
@@ -369,24 +380,47 @@ export default function Play() {
         </div>
       )}
 
-      {phase === 'lobby' && modePanel === 'online' && (
-        <OnlinePanel
-          gameId={gameId}
-          onlineKind={onlineKind}
-          setOnlineKind={setOnlineKind}
-          onBack={backFromPanel}
-          onQuick={quickMatch}
-          onCreate={createLobby}
-          onJoin={joinByCode}
-        />
-      )}
+      {phase === 'lobby' && modePanel && (
+        <div className="animate-fade-in">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <div className="inline-flex rounded-xl border border-line bg-black/65 p-1 gap-1" role="tablist" aria-label="Game modes">
+              {[
+                { key: 'online', label: 'Online', Icon: Globe2, active: 'border-emerald-neon/50 bg-emerald-neon/15 text-emerald-soft' },
+                { key: 'local', label: 'Pass & Play', Icon: WifiOff, active: 'border-cyber-cyan/45 bg-cyber-cyan/12 text-cyber-cyan' },
+                { key: 'ai', label: 'vs AI', Icon: Cpu, active: 'border-royal/55 bg-royal/15 text-[#b79dfb]' },
+              ].map(({ key, label, Icon, active }) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={modePanel === key}
+                  onClick={() => setModePanel(key)}
+                  className={`cursor-pointer rounded-lg border border-transparent px-4 py-1.5 text-xs font-semibold transition ${modePanel === key ? active : 'text-ink-faint hover:text-ink'}`}
+                ><Icon size={13} className="mr-1 inline" />{label}</button>
+              ))}
+            </div>
+            <button onClick={backFromPanel} className="ml-auto cursor-pointer rounded-xl border border-line px-4 py-2 text-xs font-semibold text-ink-dim transition hover:border-emerald-neon/40 hover:text-ink"><ArrowLeft size={13} className="mr-1 inline" />All modes</button>
+          </div>
 
-      {phase === 'lobby' && modePanel === 'local' && (
-        <LocalSetup gameId={gameId} onStart={(cfg) => { setLocalConfig(cfg); setPhase('playing-local') }} onBack={backFromPanel} />
-      )}
+          {modePanel === 'online' && (
+            <OnlinePanel
+              gameId={gameId}
+              onlineKind={onlineKind}
+              setOnlineKind={setOnlineKind}
+              onBack={backFromPanel}
+              onQuick={quickMatch}
+              onCreate={createLobby}
+              onJoin={joinByCode}
+            />
+          )}
 
-      {phase === 'lobby' && modePanel === 'ai' && (
-        <AiSetup gameId={gameId} onStart={(cfg) => { setLocalConfig(cfg); setPhase('playing-local') }} onBack={backFromPanel} />
+          {modePanel === 'local' && (
+            <LocalSetup gameId={gameId} onStart={(cfg) => { setLocalConfig(cfg); setPhase('playing-local') }} onBack={backFromPanel} />
+          )}
+
+          {modePanel === 'ai' && (
+            <AiSetup gameId={gameId} onStart={(cfg) => { setLocalConfig(cfg); setPhase('playing-local') }} onBack={backFromPanel} />
+          )}
+        </div>
       )}
 
       {phase === 'searching' && (
@@ -523,34 +557,16 @@ export default function Play() {
       {phase === 'playing' && gameState && seats && (
         <div className="grid gap-5 lg:grid-cols-[1fr_290px]">
           <div className="min-w-0">
-            <div className="mb-4 flex items-center justify-between rounded-xl border border-line bg-white/[.02] px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <Pic user={seats[turnSeat]} size={34} />
-                <div>
-                  <p className="text-[13px] font-bold leading-tight">
-                    {spectator ? <span className="text-cyber-cyan"><Eye size={13} className="mr-1 inline" /> Spectating live</span>
-                      : myTurn ? <span className="text-emerald-neon text-glow">Your turn — {gameId === 'ludo' && gameState.roll == null ? 'roll the dice!' : 'make your move'}</span>
-                      : <span>{seats[turnSeat]?.displayName}{seats[turnSeat]?.isBot ? ' (bot)' : ''} is deciding…</span>}
-                  </p>
-                  <p className="text-[10px] text-ink-faint">
-                    {seats.map((s, i) => `${SEAT_COLORS[i % 4].name}: ${s.displayName}`).join(' · ')}
-                  </p>
-                </div>
-              </div>
-              {(gameId === 'reversi' || gameId === 'ludo' || gameId === 'snakes') && (
-                <BoardThemePicker
-                  theme={isReversi ? boardTheme : gameId === 'ludo' ? ludoMap : snakesMap}
-                  setTheme={isReversi ? setBoardTheme : gameId === 'ludo' ? setLudoMap : setSnakesMap}
-                  gameId={gameId}
-                />
-              )}
-              {!spectator && (
-                <div className={`flex items-center gap-1.5 font-mono text-sm font-bold ${turnClock <= 10 ? 'text-red-300 animate-pulse' : 'text-ink-dim'}`} title="Turn timer">
-                  <Timer size={14} />
-                  {String(Math.floor(turnClock / 60)).padStart(2, '0')}:{String(turnClock % 60).padStart(2, '0')}
-                </div>
-              )}
-            </div>
+            <MatchHud
+              gameId={gameId}
+              seats={seats}
+              turnSeat={turnSeat}
+              myTurn={myTurn}
+              spectator={spectator}
+              gameState={gameState}
+              turnClock={turnClock}
+              themeCtl={themeCtl}
+            />
 
             {gameId === 'tictactoe' && <TicTacToeBoard state={gameState} mySeat={mySeat} playing={myTurn} onMove={onMove} lastEvent={lastEvent} />}
             {gameId === 'reversi' && <ReversiBoard state={gameState} mySeat={spectator ? 0 : mySeat} playing={myTurn} onMove={onMove} onPass={onPass} theme={boardTheme} lastFlips={lastEvent?.flips || null} showHints />}
@@ -571,6 +587,18 @@ export default function Play() {
                     </div>
                     {turnSeat === s.seat && <span className="h-2 w-2 rounded-full bg-emerald-neon animate-pulse-glow" />}
                   </div>
+                ))}
+              </div>
+            </Card>
+            <Card className="flex max-h-[240px] flex-col p-4">
+              <h4 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-ink-faint"><History size={13} /> Match log</h4>
+              <div className="flex-1 space-y-1.5 overflow-y-auto pr-1 font-mono text-[11px] scrollbar-thin-dark" aria-live="polite">
+                {log.length === 0 && <p className="py-3 text-center text-[11px] text-ink-faint">No actions yet.</p>}
+                {log.map((e, i) => (
+                  <p key={i} className="flex items-baseline gap-2">
+                    <span className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: SEAT_COLORS[(e.seat ?? 0) % 4].color }} />
+                    <span className="text-ink-dim">{e.text || logText(gameId, e.ev)}</span>
+                  </p>
                 ))}
               </div>
             </Card>
@@ -682,6 +710,126 @@ function readLocalMatches(gameId) {
     return JSON.parse(localStorage.getItem('gh:local-matches') || '[]').filter((m) => m.gameId === gameId)
   } catch { return [] }
 }
+
+// ---------------- arena HUD & match log ----------------
+function MatchHud({ gameId, seats, turnSeat, myTurn, spectator, gameState, turnClock, themeCtl }) {
+  const four = seats.length > 2
+  const seat = (idx) => seats.find((s) => s.seat === idx) || seats[0]
+
+  const turnText = spectator
+    ? <span className="text-cyber-cyan"><Eye size={13} className="mr-1 inline align-middle" /> Spectating live</span>
+    : myTurn
+      ? <span className="text-emerald-neon text-glow">Your turn{gameId === 'ludo' && gameState.roll == null ? ' — roll the dice!' : ''}</span>
+      : <span>{seat(turnSeat)?.displayName}{seat(turnSeat)?.isBot ? ' (bot)' : ''}{gameId === 'ludo' && gameState.roll == null ? ' — rolling…' : ' is deciding…'}</span>
+
+  const legalCount = gameId === 'reversi' && gameState?.board
+    ? ENGINES.reversi.valid(gameState, turnSeat).length
+    : null
+
+  let bar = null
+  if (gameId === 'reversi' && gameState?.board) {
+    const a = gameState.board.filter((v) => v === 1).length
+    const b = gameState.board.filter((v) => v === 2).length
+    bar = {
+      left: (a / Math.max(a + b, 1)) * 100,
+      leftCol: SEAT_COLORS[0].color,
+      rightCol: SEAT_COLORS[1].color,
+      label: `${a} — ${b}`,
+    }
+  } else if (gameId === 'snakes' && Array.isArray(gameState?.tokens)) {
+    const lead = Math.max(...gameState.tokens.map((t) => Math.min(Math.max(t, 0), 100)))
+    if (lead > 0) {
+      bar = {
+        left: lead,
+        leftCol: SEAT_COLORS[gameState.tokens.indexOf(lead) % 4].color,
+        rightCol: 'rgba(255,255,255,.08)',
+        label: `lead square ${lead}/100`,
+      }
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-2xl border border-line bg-gradient-to-b from-white/[.03] to-transparent px-4 py-3 shadow-[0_12px_32px_-16px_rgba(0,0,0,.8)]">
+      <div className="mb-3 flex items-center justify-between gap-2.5 border-b border-line pb-2.5">
+        <div className="flex items-center gap-2.5">
+          <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold ${spectator ? 'border-cyber-cyan/40 text-cyber-cyan' : myTurn ? 'border-emerald-neon/40 text-emerald-soft' : 'border-line text-ink-dim'}`}>
+            {connectedDot(spectator)} {turnText}
+          </span>
+          {legalCount != null && <span className="text-[10px] text-ink-faint">{legalCount} legal moves</span>}
+        </div>
+        <div className="flex items-center gap-2.5">
+          {themeCtl && <BoardThemePicker theme={themeCtl.value} setTheme={themeCtl.setTheme} gameId={themeCtl.gameId} />}
+          {!spectator && (
+            <span className={`inline-flex items-center gap-1 font-mono text-sm font-bold ${turnClock <= 10 ? 'animate-pulse text-red-300' : 'text-ink-dim'}`} title="Turn timer">
+              <Timer size={14} />
+              {String(Math.floor(turnClock / 60)).padStart(2, '0')}:{String(turnClock % 60).padStart(2, '0')}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {four ? (
+        <>
+          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+            {seats.map((s) => (
+              <HudSeat key={s.seat} s={s} idx={s.seat} isTurn={turnSeat === s.seat} />
+            ))}
+          </div>
+          {bar && <ProgressStrip bar={bar} />}
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
+            <HudSeat s={seat(0)} idx={0} isTurn={turnSeat === 0} />
+            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-line bg-black/40 text-[10px] font-black text-ink-faint">VS</span>
+            <HudSeat s={seat(1)} idx={1} isTurn={turnSeat === 1} flip />
+          </div>
+          {bar && <ProgressStrip bar={bar} />}
+        </>
+      )}
+    </div>
+  )
+}
+
+function connectedDot(spectator) {
+  return <span className={`h-1.5 w-1.5 rounded-full ${spectator ? 'bg-cyber-cyan' : 'bg-emerald-neon'} animate-pulse-glow`} />
+}
+
+function HudSeat({ s, idx, isTurn, flip }) {
+  const col = SEAT_COLORS[idx % 4].color
+  return (
+    <div
+      className={`flex min-w-0 items-center gap-2.5 rounded-xl border bg-black/50 px-2.5 py-2 transition-all duration-200 ${flip ? 'flex-row-reverse text-right' : ''}`}
+      style={{
+        borderColor: isTurn ? col + '99' : 'var(--line)',
+        boxShadow: isTurn ? `0 0 20px -6px ${col}cc, inset 0 1px 0 rgba(255,255,255,.06)` : 'none',
+        background: isTurn ? `linear-gradient(140deg, ${col}14, rgba(0,0,0,.5))` : undefined,
+      }}
+    >
+      <Pic user={s} size={28} />
+      <span className={"min-w-0 flex-1"}>
+        <span className="block truncate text-xs font-bold text-ink">{s.displayName}{s.isBot ? ' (bot)' : ''} {s.isVerified ? <VerifiedIcon size={11} /> : null}</span>
+        <span className="mt-0.5 block text-[10px] text-ink-faint">{SEAT_COLORS[idx % 4].name} · {s.rating ?? 1000} elo</span>
+      </span>
+      {isTurn && <span className="h-2 w-2 shrink-0 animate-pulse-glow rounded-full" style={{ background: col, boxShadow: `0 0 8px ${col}` }} />}
+    </div>
+  )
+}
+
+function ProgressStrip({ bar }) {
+  return (
+    <div className="mt-3 border-t border-line pt-2.5">
+      <div className="flex items-center justify-between gap-2 text-[10px] font-semibold text-ink-faint">
+        <span style={{ color: bar.leftCol }}>{bar.label}</span>
+      </div>
+      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/[.07] hover:cursor-default flex" aria-hidden>
+        <span className="h-full transition-all duration-500" style={{ width: `${bar.left}%`, background: `linear-gradient(90deg, ${bar.leftCol}, ${bar.leftCol}cc)` }} />
+        <span className="h-full flex-1 transition-all duration-500" style={{ background: bar.rightCol }} />
+      </div>
+    </div>
+  )
+}
+
 
 // ---------------- Reversi lobby hero ----------------
 function ReversiHero({ user, winRate, onPlay }) {
@@ -929,7 +1077,6 @@ function OnlinePanel({ gameId, onlineKind, setOnlineKind, onBack, onQuick, onCre
   return (
     <div className="animate-fade-in space-y-4">
       <div className="flex items-center gap-3">
-        <button onClick={onBack} className="cursor-pointer rounded-lg border border-line p-2 text-ink-dim transition hover:text-ink" aria-label="Back"><ArrowLeft size={15} /></button>
         <div>
           <h2 className="text-lg font-bold">Online multiplayer</h2>
           <p className="text-xs text-ink-faint">Host a table, join a friend's lobby, or let matchmaking pair you.</p>

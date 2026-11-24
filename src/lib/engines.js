@@ -11,6 +11,7 @@ export const ENGINES = {
     bot: reversi.reversiBotMove,
     best: reversi.bestReversiMove,
     rank: reversi.rankReversiMoves,
+    valid: reversi.validMoves,
     scoreOf: reversi.reversiScore,
     hasPass: true,
     hasBest: true,

@@ -89,6 +89,46 @@ export const SNAKE_MAPS = {
       '--sn-glow': '0 30px 70px -28px rgba(139,92,246,.55), inset 0 1px 1px rgba(255,255,255,.06)',
     },
   },
+  ocean: {
+    id: 'ocean',
+    name: 'Sunken Reef',
+    desc: 'Abyssal trench, bioluminescent eels, coral ladders',
+    css: {
+      '--sn-frame': 'linear-gradient(140deg, #0f2f42 0%, #082032 50%, #04121e 100%)',
+      '--sn-frame-edge': 'rgba(103, 232, 249, 0.34)',
+      '--sn-board': 'radial-gradient(130% 130% at 30% 18%, #0d3a52 0%, #073046 55%, #031522 100%)',
+      '--sn-cell-a': 'rgba(103, 232, 249, 0.1)',
+      '--sn-cell-b': 'rgba(3, 16, 26, 0.6)',
+      '--sn-cell-edge': 'rgba(103, 232, 249, 0.16)',
+      '--sn-num': 'rgba(207, 246, 255, 0.6)',
+      '--sn-ladder': '#f4a98c',
+      '--sn-snake': '#67e8f9',
+      '--sn-snake-dark': '#0e5464',
+      '--sn-start': 'rgba(16, 229, 138, 0.34)',
+      '--sn-end': 'rgba(251, 191, 36, 0.34)',
+      '--sn-glow': '0 30px 70px -28px rgba(34,211,238,.5), inset 0 1px 1px rgba(255,255,255,.06)',
+    },
+  },
+  candy: {
+    id: 'candy',
+    name: 'Candy Carnival',
+    desc: 'Pastel licorice snakes, frosting tiles, lollipop rails',
+    css: {
+      '--sn-frame': 'linear-gradient(140deg, #67306b 0%, #45214d 50%, #26102e 100%)',
+      '--sn-frame-edge': 'rgba(251, 207, 232, 0.4)',
+      '--sn-board': 'linear-gradient(160deg, #fdeef6 0%, #f7e2ee 55%, #ecd4e4 100%)',
+      '--sn-cell-a': 'rgba(103, 48, 107, 0.14)',
+      '--sn-cell-b': 'rgba(255, 255, 255, 0.5)',
+      '--sn-cell-edge': 'rgba(103, 48, 107, 0.26)',
+      '--sn-num': 'rgba(88, 34, 92, 0.66)',
+      '--sn-ladder': '#e15a86',
+      '--sn-snake': '#7c3aed',
+      '--sn-snake-dark': '#4c1d95',
+      '--sn-start': 'rgba(16, 185, 129, 0.4)',
+      '--sn-end': 'rgba(234, 88, 12, 0.34)',
+      '--sn-glow': '0 30px 70px -28px rgba(0,0,0,.85), inset 0 1.5px 2px rgba(255,236,246,.6)',
+    },
+  },
 }
 
 // cell number n (1..100) -> grid [row, col]; row 0 = top
@@ -109,6 +149,20 @@ export default function SnakesBoard({ state, mySeat, playing, onRoll, map = 'jun
   const myTurn = playing && state.turn === mySeat
   const seatCount = state.tokens.length
 
+  // Detect a snake slide or ladder climb on the previous action and spotlight it briefly.
+  const [ride, setRide] = React.useState(null) // { from, to, kind }
+  React.useEffect(() => {
+    const [from, to] = state.lastPath || []
+    if (from != null && to != null && from !== to) {
+      const kind = LADDERS[from] === to ? 'ladder' : SNAKES[from] === to ? 'snake' : null
+      setRide(kind ? { from, to, kind } : null)
+      if (kind) {
+        const t = setTimeout(() => setRide(null), 1600)
+        return () => clearTimeout(t)
+      }
+    }
+  }, [state.lastPath?.[0], state.lastPath?.[1]])
+
   const stacks = React.useMemo(() => {
     const g = new Map()
     state.tokens.forEach((p, s) => {
@@ -126,13 +180,21 @@ export default function SnakesBoard({ state, mySeat, playing, onRoll, map = 'jun
       <div className="rounded-[26px] p-2.5 sm:p-4" style={{ background: 'var(--sn-frame)', boxShadow: 'var(--sn-glow)', border: '1px solid var(--sn-frame-edge)' }}>
         <div className="relative aspect-square w-full overflow-hidden rounded-[14px]" style={{ background: 'var(--sn-board)', boxShadow: 'inset 0 3px 18px rgba(0,0,0,.3)' }}>
           <BoardGrid m={m} />
+          {/* vignette + grain */}
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{
+            background: 'radial-gradient(120% 120% at 50% 42%, transparent 55%, rgba(0,0,0,.34) 100%)',
+          }} />
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{
+            background: 'repeating-linear-gradient(118deg, rgba(255,255,255,.05) 0 1px, transparent 1px 7px)',
+            mixBlendMode: 'overlay',
+          }} />
           <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
             {Object.entries(LADDERS).map(([from, to]) => {
               const [x1, y1] = cellXY(+from), [x2, y2] = cellXY(+to)
-              return <Ladder key={`L${from}`} x1={x1} y1={y1} x2={x2} y2={y2} color="var(--sn-ladder)" />
+              return <Ladder key={`L${from}`} x1={x1} y1={y1} x2={x2} y2={y2} color="var(--sn-ladder)" active={ride?.kind === 'ladder' && ride.from === +from} />
             })}
             {Object.entries(SNAKES).map(([from, to]) => (
-              <Snake key={`S${from}`} from={+from} to={+to} m={m} />
+              <Snake key={`S${from}`} from={+from} to={+to} m={m} active={ride?.kind === 'snake' && ride.from === +from} />
             ))}
           </svg>
 
@@ -153,8 +215,8 @@ export default function SnakesBoard({ state, mySeat, playing, onRoll, map = 'jun
               const [dx, dy] = dxs[gi] || [0, 0]
               return (
                 <span
-                  key={`${s}-${gi}`}
-                  className="absolute z-10 rounded-full border-2 transition-all duration-500 ease-out"
+                  key={`${s}-${gi}-${np}`}
+                  className="absolute z-10 rounded-full border-2 animate-token-land"
                   style={{
                     left: `${c * 10 + 5 + dx - size / 2}%`, top: `${r * 10 + 5 + dy - size / 2}%`,
                     width: `${size}%`, height: `${size}%`,
@@ -201,11 +263,12 @@ function BoardGrid({ m }) {
   )
 }
 
-function Ladder({ x1, y1, x2, y2, color }) {
+function Ladder({ x1, y1, x2, y2, color, active }) {
+  void color
   const len = Math.hypot(x2 - x1, y2 - y1)
   const rungs = Math.max(3, Math.round(len / 4.5))
   return (
-    <g opacity=".8">
+    <g style={{ opacity: active ? 1 : 0.8, filter: active ? 'drop-shadow(0 0 3px #a7f3d0) drop-shadow(0 0 6px #34d399)' : 'none' }}>
       <line x1={x1 - 1.7} y1={y1} x2={x2 - 1.7} y2={y2} stroke={color} strokeWidth="0.9" opacity=".75" strokeLinecap="round" />
       <line x1={x1 + 1.7} y1={y1} x2={x2 + 1.7} y2={y2} stroke={color} strokeWidth="0.9" opacity=".75" strokeLinecap="round" />
       {Array.from({ length: rungs }).map((_, i) => {
@@ -218,7 +281,8 @@ function Ladder({ x1, y1, x2, y2, color }) {
   )
 }
 
-function Snake({ from, to, m }) {
+function Snake({ from, to, m, active }) {
+  void m
   const [x1, y1] = cellXY(from), [x2, y2] = cellXY(to)
   // sinuous body: 3 quadratic waves
   const segs = 24
@@ -236,6 +300,10 @@ function Snake({ from, to, m }) {
     <g>
       <path d={d} stroke="var(--sn-snake-dark)" strokeWidth="2.3" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity=".9" />
       <path d={d} stroke="var(--sn-snake)" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      {active && (
+        <path d={d} stroke="#d9f99d" strokeWidth="1.1" fill="none" strokeLinecap="round" strokeDasharray="4 9"
+          className="animate-dash-flow" style={{ filter: 'drop-shadow(0 0 3px rgba(217,249,157,.9))' }} />
+      )}
       <circle cx={x1 + headDirX * 0.6} cy={y1 + headDirY * 0.6} r="2.1" fill="var(--sn-snake)" stroke="var(--sn-snake-dark)" strokeWidth="0.5" />
       <circle cx={x1 + headDirX * 0.25 + nx * 0.8} cy={y1 + headDirY * 0.25 + ny * 0.8} r="0.45" fill="#fff" />
       <circle cx={x1 + headDirX * 0.25 - nx * 0.8} cy={y1 + headDirY * 0.25 - ny * 0.8} r="0.45" fill="#fff" />

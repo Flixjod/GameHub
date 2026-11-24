@@ -129,6 +129,25 @@ input[type='text'], input[type='number'], input[type='password'], input[type='em
   0% { transform: scale(.8); opacity: .9; }
   100% { transform: scale(2.1); opacity: 0; }
 }
+@keyframes token-land {
+  0% { transform: scale(.4) translateY(-16%); opacity: .4; }
+  55% { transform: scale(1.18) translateY(0); opacity: 1; }
+  78% { transform: scale(.94); }
+  100% { transform: scale(1); }
+}
+@keyframes dice-tumble {
+  0% { transform: rotateX(0) rotateY(0) rotateZ(0) scale(.7); }
+  40% { transform: rotateX(320deg) rotateY(180deg) rotateZ(120deg) scale(1.14); }
+  75% { transform: rotateX(600deg) rotateY(430deg) rotateZ(260deg) scale(1.04); }
+  100% { transform: rotateX(720deg) rotateY(720deg) rotateZ(360deg) scale(1); }
+}
+@keyframes yard-turn {
+  0%, 100% { box-shadow: inset 0 0 18px -6px currentColor, 0 0 0 0 currentColor; }
+  50% { box-shadow: inset 0 0 34px -4px currentColor, 0 0 22px -2px currentColor; }
+}
+@keyframes dash-flow {
+  to { stroke-dashoffset: -26; }
+}
 
 .animate-floaty { animation: floaty 6s ease-in-out infinite; }
 .animate-pulse-glow { animation: pulse-glow 3.2s ease-in-out infinite; }
@@ -137,6 +156,10 @@ input[type='text'], input[type='number'], input[type='password'], input[type='em
 .animate-pop-in { animation: pop-in .28s cubic-bezier(.34,1.4,.64,1) both; }
 .animate-slide-up { animation: slide-up .3s cubic-bezier(.22,.8,.32,1) both; }
 .animate-dice { animation: dice-roll .7s cubic-bezier(.3,.1,.2,1) both; }
+.animate-token-land { animation: token-land .5s cubic-bezier(.34,1.4,.64,1) both; }
+.animate-dice-tumble { animation: dice-tumble .75s cubic-bezier(.34,.8,.4,1) both; }
+.animate-yard-turn { animation: yard-turn 1.7s ease-in-out infinite; }
+.animate-dash-flow { animation: dash-flow .9s linear infinite; }
 .animate-coin { animation: spin-coin .8s linear; }
 
 .skeleton {
@@ -186,4 +209,5 @@ input[type='text'], input[type='number'], input[type='password'], input[type='em
 @media (prefers-reduced-motion: reduce) {
   .rv-disc { transition-duration: 0.01s !important; }
   .rv-disc-face { animation: none !important; }
+  .animate-token-land, .animate-dice-tumble, .animate-yard-turn, .animate-dash-flow, .animate-dice { animation: none !important; }
 }

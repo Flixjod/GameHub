@@ -111,6 +111,46 @@ export const LUDO_MAPS = {
     seatTint: PLAYER_COLORS,
     seatTintDark: PLAYER_DARK,
   },
+  dragonforge: {
+    id: 'dragonforge',
+    name: 'Dragon Forge',
+    desc: 'Obsidian slab, molten gold veins, ember glow',
+    css: {
+      '--ld-frame': 'linear-gradient(140deg, #2b2118 0%, #17100a 50%, #0a0705 100%)',
+      '--ld-frame-edge': 'rgba(251, 191, 36, 0.4)',
+      '--ld-board': 'radial-gradient(130% 130% at 32% 20%, #1d1710 0%, #120d08 55%, #080604 100%)',
+      '--ld-cell': 'rgba(251, 191, 36, 0.05)',
+      '--ld-cell-edge': 'rgba(251, 191, 36, 0.22)',
+      '--ld-grid': 'rgba(251, 191, 36, 0.14)',
+      '--ld-safe': '#fb923c',
+      '--ld-glow': '0 30px 70px -28px rgba(251,146,60,.5), inset 0 1px 1px rgba(255,214,150,.1)',
+      '--ld-yard': 'rgba(251, 146, 60, 0.04)',
+      '--ld-num': 'rgba(255,228,180,.42)',
+    },
+    center: ['#e11d48', '#fb923c', '#eab308', '#a78bfa'],
+    seatTint: ['#e11d48', '#fb923c', '#eab308', '#a78bfa'],
+    seatTintDark: ['#4c0d1a', '#5c2406', '#503a04', '#3b2a75'],
+  },
+  royalgarden: {
+    id: 'royalgarden',
+    name: 'Royal Garden',
+    desc: 'Manor hedge maze, porcelain track, rose accents',
+    css: {
+      '--ld-frame': 'linear-gradient(140deg, #2e4a34 0%, #1c3322 50%, #0e1d13 100%)',
+      '--ld-frame-edge': 'rgba(190, 242, 200, 0.34)',
+      '--ld-board': 'linear-gradient(160deg, #f4efe0 0%, #ece5d0 55%, #ddd3ba 100%)',
+      '--ld-cell': 'rgba(46, 74, 52, 0.12)',
+      '--ld-cell-edge': 'rgba(46, 74, 52, 0.34)',
+      '--ld-grid': 'rgba(46, 74, 52, 0.22)',
+      '--ld-safe': '#b0486e',
+      '--ld-glow': '0 30px 70px -28px rgba(0,0,0,.9), inset 0 1.5px 2px rgba(255,244,224,.55)',
+      '--ld-yard': 'rgba(46, 74, 52, 0.1)',
+      '--ld-num': 'rgba(46,74,52,.55)',
+    },
+    center: ['#e11d48', '#7c3aed', '#f59e0b', '#0ea5e9'],
+    seatTint: ['#e11d48', '#7c3aed', '#f59e0b', '#0ea5e9'],
+    seatTintDark: ['#5c1715', '#3b2a75', '#6b4d0a', '#0c2b5e'],
+  },
 }
 
 function rc(seat, p) {
@@ -185,18 +225,26 @@ export default function LudoBoard({ state, mySeat, playing, onMove, onRoll, map 
       <div className="rounded-[26px] p-2.5 sm:p-4" style={{ background: 'var(--ld-frame)', boxShadow: 'var(--ld-glow)', border: '1px solid var(--ld-frame-edge)' }}>
         <div className="relative aspect-square w-full overflow-hidden rounded-[14px]" style={{ background: 'var(--ld-board)', boxShadow: 'inset 0 3px 18px rgba(0,0,0,.35)' }}>
 
+          {/* material grain overlay */}
+          <span aria-hidden className="pointer-events-none absolute inset-0" style={{
+            background: 'repeating-linear-gradient(112deg, rgba(255,255,255,.05) 0 1px, transparent 1px 6px), repeating-linear-gradient(18deg, rgba(0,0,0,.05) 0 1px, transparent 1px 9px)',
+            mixBlendMode: 'overlay',
+          }} />
+
           {/* yards */}
           {YARD_CORNER.map(([r, c], s) => {
             const active = s < seatCount
             const col = seatCellColor(m, s)
+            const isTurnSeat = active && state.turn === s && roll == null
             return (
-              <div key={`y${s}`} className="absolute rounded-2xl" style={{
+              <div key={`y${s}`} className={`absolute rounded-2xl ${isTurnSeat ? 'animate-yard-turn' : ''}`} style={{
                 left: pct(c + 0.3), top: pct(r + 0.3), width: pct(5.4), height: pct(5.4),
                 background: active
                   ? `linear-gradient(140deg, ${col}2e, ${m.seatTintDark[s]}66 85%)`
                   : 'var(--ld-yard)',
-                border: `1.5px solid ${active ? col + '66' : 'rgba(128,128,128,.15)'}`,
+                border: `1.5px solid ${active ? col + (isTurnSeat ? 'aa' : '66') : 'rgba(128,128,128,.15)'}`,
                 boxShadow: active ? `inset 0 0 26px -6px ${col}55, 0 2px 10px rgba(0,0,0,.18)` : 'none',
+                color: active ? col : 'transparent',
               }}>
                 <div className="absolute inset-[9%] rounded-xl" style={{ border: `1.5px dashed ${active ? col + '55' : 'rgba(128,128,128,.14)'}` }} />
                 {active && <span className="absolute left-1/2 top-[6%] -translate-x-1/2 text-[9px] font-extrabold uppercase tracking-[0.18em]" style={{ color: col }}>{SEAT_LABELS[s]}</span>}
@@ -305,10 +353,11 @@ export default function LudoBoard({ state, mySeat, playing, onMove, onRoll, map 
                     }} />
                   )}
                   <button
+                    key={`${s}-${t}-${pos[0]}-${pos[1]}-${n}`}
                     aria-label={`${SEAT_LABELS[s]} pawn ${t + 1}${n > 1 ? ` (sharing square ${gi + 1} of ${n})` : ''}`}
                     onClick={() => isMovable && onMove({ token: t })}
                     disabled={!isMovable}
-                    className={`absolute rounded-full transition-all duration-500 ease-out ${isMovable ? 'z-30 cursor-pointer hover:scale-110' : 'z-20'}`}
+                    className={`absolute rounded-full animate-token-land ${isMovable ? 'z-30 cursor-pointer hover:scale-110' : 'z-20'}`}
                     style={{
                       left: pct(pos[1] + 0.5 + dx - size / 2),
                       top: pct(pos[0] + 0.5 + dy - size / 2),
@@ -359,22 +408,32 @@ export default function LudoBoard({ state, mySeat, playing, onMove, onRoll, map 
 }
 
 export function Dice({ roll, canRoll, onRoll, rolling }) {
+  void rolling
   return (
     <button
       onClick={onRoll}
-      disabled={!canRoll || rolling}
-      className={`relative flex h-16 w-16 items-center justify-center rounded-2xl border transition cursor-pointer ${
+      disabled={!canRoll}
+      className={`group relative flex h-16 w-16 items-center justify-center rounded-2xl border transition-all duration-200 cursor-pointer ${
         canRoll
-          ? 'border-emerald-neon/60 bg-emerald-neon/10 hover:bg-emerald-neon/20 shadow-[0_0_24px_-6px_rgba(16,229,138,.7)] animate-pulse-glow scale-100 hover:scale-105'
+          ? 'border-emerald-neon/60 bg-emerald-neon/10 hover:bg-emerald-neon/20 shadow-[0_0_24px_-6px_rgba(16,229,138,.7)] scale-100 hover:scale-105 active:scale-95'
           : 'border-line-2 bg-white/[.03]'}`}
       aria-label={roll ? `Dice shows ${roll}` : 'Roll dice'}
     >
-      {rolling ? <span className="animate-dice text-2xl">🎲</span> : roll ? <Pips n={roll} /> : <span className="text-2xl opacity-60">🎲</span>}
+      {roll
+        ? <Pips key={roll} n={roll} tumble />
+        : (
+          <span className="relative block h-9 w-9 rounded-xl bg-gradient-to-br from-white/12 to-white/[.04] border border-white/15 shadow-inner">
+            <Pips n={6} />
+          </span>
+        )}
+      {canRoll && roll == null && (
+        <span className="absolute -bottom-5 text-[9px] font-extrabold uppercase tracking-[0.22em] text-emerald-soft opacity-80">Roll</span>
+      )}
     </button>
   )
 }
 
-function Pips({ n }) {
+function Pips({ n, tumble }) {
   const pos = {
     1: [[50, 50]],
     2: [[28, 28], [72, 72]],
@@ -384,9 +443,14 @@ function Pips({ n }) {
     6: [[28, 25], [72, 25], [28, 50], [72, 50], [28, 75], [72, 75]],
   }[n] || []
   return (
-    <span className="relative block h-9 w-9 animate-dice rounded-lg bg-[#f2f7f4] shadow-inner" key={n}>
+    <span className={`relative block h-9 w-9 rounded-xl shadow-[0_4px_10px_-2px_rgba(0,0,0,.7),inset_0_1.5px_2px_rgba(255,255,255,.8),inset_0_-2px_4px_rgba(0,0,0,.18)] border border-black/10 ${tumble ? 'animate-dice-tumble' : ''}`}
+      style={{ background: 'linear-gradient(150deg, #ffffff 0%, #eef2ee 60%, #d9e2da 100%)' }}>
       {pos.map(([x, y], i) => (
-        <span key={i} className="absolute rounded-full bg-[#0a0f0d]" style={{ width: 5, height: 5, left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)' }} />
+        <span key={i} className="absolute h-[6px] w-[6px] rounded-full" style={{
+          left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)',
+          background: 'radial-gradient(circle at 32% 28%, #333d38, #05070a 75%)',
+          boxShadow: 'inset 0 1px 1px rgba(0,0,0,.9), 0 0.5px 1px rgba(255,255,255,.55)',
+        }} />
       ))}
     </span>
   )

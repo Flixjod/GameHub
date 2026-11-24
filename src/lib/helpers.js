@@ -28,3 +28,33 @@ export function timeAgo(ts) {
   if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`
   return d.toLocaleDateString()
 }
+
+export function logText(gameId, ev) {
+  if (!ev) return ''
+  if (ev.type === 'roll') {
+    const parts = [`rolled ${ev.roll ?? '\u2014'}`]
+    if (ev.again) parts.push('extra roll earned')
+    if (ev.forfeited) parts.push('three sixes \u2014 turn forfeited')
+    if (ev.blocked) parts.push('no legal move \u2014 turn skipped')
+    return parts.join(' \u00b7 ')
+  }
+  if (ev.type === 'move') {
+    if (gameId === 'reversi') {
+      const i = typeof ev.move === 'number' ? ev.move : ev.move?.i
+      const coord = i != null && i >= 0 ? `${String.fromCharCode(65 + (i % 8))}${Math.floor(i / 8) + 1}` : '?'
+      return `played ${coord}${ev.flips ? ` \u2014 flipped ${ev.flips}` : ''}`
+    }
+    if (gameId === 'ludo') {
+      const t = (ev.move?.token ?? -1) + 1
+      return `moved token ${t}${ev.captured ? ' \u2014 capture!' : ''}${ev.again ? ' \u00b7 extra roll' : ''}`
+    }
+    if (gameId === 'tictactoe') {
+      const i = ev.move?.i
+      return i != null ? `claimed square ${String.fromCharCode(65 + (i % 3))}${Math.floor(i / 3) + 1}` : 'moved'
+    }
+    return 'moved'
+  }
+  if (ev.type === 'pass') return 'had no legal move \u2014 turn passed'
+  if (ev.type === 'skip') return 'skipped \u2014 no legal move'
+  return ev.message || ev.type
+}
