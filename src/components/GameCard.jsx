@@ -129,3 +129,24 @@ function MoreArt() {
     </svg>
   )
 }
+
+export function ModeCard({ icon: Icon, title, bullets, tone, onClick, children }) {
+  const tones = {
+    emerald: 'border-emerald-neon/30 hover:border-emerald-neon/60 text-emerald-soft bg-emerald-neon/[.04]',
+    cyan: 'border-cyber-cyan/30 hover:border-cyber-cyan/60 text-cyber-cyan bg-cyber-cyan/[.04]',
+    royal: 'border-royal/40 hover:border-royal/70 text-[#b79dfb] bg-royal/[.06]',
+  }
+  return (
+    <Card onClick={onClick} className={`group flex cursor-pointer flex-col gap-2 p-5 transition-all duration-200 hover:-translate-y-1 ${tones[tone]}`} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
+      <span className={`flex h-11 w-11 items-center justify-center rounded-xl border ${tones[tone]}`}>
+        <Icon size={20} />
+      </span>
+      <h3 className="mt-1 text-[16px] font-bold text-ink">{title}</h3>
+      <ul className="space-y-1 text-xs leading-relaxed text-ink-faint">
+        {bullets.map((b) => <li key={b}>· {b}</li>)}
+      </ul>
+      {children}
+    </Card>
+  )
+}
+

@@ -13,8 +13,8 @@ import ReversiBoard from '../components/boards/ReversiBoard.jsx'
 import LudoBoard from '../components/boards/LudoBoard.jsx'
 import SnakesBoard from '../components/boards/SnakesBoard.jsx'
 import { GAME_ART } from '../components/GameArt.jsx'
-import { useRooms } from '../components/GameCard.jsx'
-import LocalMatch from '../components/game/LocalMatch.jsx'
+import { useRooms, ModeCard } from '../components/GameCard.jsx'
+import LocalMatch, { BoardThemePicker } from '../components/game/LocalMatch.jsx'
 import MatchReview from '../components/game/MatchReview.jsx'
 import { usePref } from '../lib/prefs.js'
 
@@ -74,6 +74,8 @@ export default function Play() {
   const [review, setReview] = useState(null) // { moves, seats }
   const [localConfig, setLocalConfig] = useState(null)
   const [boardTheme, setBoardTheme] = usePref('gh:board-theme-reversi', 'emerald')
+  const [ludoMap, setLudoMap] = usePref('gh:ludo-map', 'clubhouse')
+  const [snakesMap, setSnakesMap] = usePref('gh:snakes-map', 'jungle')
   const [recentLocal, setRecentLocal] = useState([])
   const [rulesOpen, setRulesOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -209,6 +211,7 @@ export default function Play() {
       })
     } else if (roomCode) {
       autoFlowDone.current = true
+      setModePanel('online')
       setPhase('waiting')
       socket.emit('room:join', { code: roomCode }, (res) => {
         if (res?.error) {
@@ -229,6 +232,17 @@ export default function Play() {
           setPhase('waiting')
         }
       })
+    } else if (params.get('quick') === '1') {
+      autoFlowDone.current = true
+      setModePanel('online')
+      setPhase('searching')
+      socket.emit('matchmaking:join', { game: gameId, ranked: onlineKind === 'ranked' })
+    } else if (params.get('join') === '1') {
+      autoFlowDone.current = true
+      setModePanel('online')
+    } else if (params.get('mode') === 'local') {
+      autoFlowDone.current = true
+      setModePanel('local')
     }
   }, [socket, user, params, gameId, toast])
 
@@ -523,6 +537,13 @@ export default function Play() {
                   </p>
                 </div>
               </div>
+              {(gameId === 'reversi' || gameId === 'ludo' || gameId === 'snakes') && (
+                <BoardThemePicker
+                  theme={isReversi ? boardTheme : gameId === 'ludo' ? ludoMap : snakesMap}
+                  setTheme={isReversi ? setBoardTheme : gameId === 'ludo' ? setLudoMap : setSnakesMap}
+                  gameId={gameId}
+                />
+              )}
               {!spectator && (
                 <div className={`flex items-center gap-1.5 font-mono text-sm font-bold ${turnClock <= 10 ? 'text-red-300 animate-pulse' : 'text-ink-dim'}`} title="Turn timer">
                   <Timer size={14} />
@@ -533,8 +554,8 @@ export default function Play() {
 
             {gameId === 'tictactoe' && <TicTacToeBoard state={gameState} mySeat={mySeat} playing={myTurn} onMove={onMove} lastEvent={lastEvent} />}
             {gameId === 'reversi' && <ReversiBoard state={gameState} mySeat={spectator ? 0 : mySeat} playing={myTurn} onMove={onMove} onPass={onPass} theme={boardTheme} lastFlips={lastEvent?.flips || null} showHints />}
-            {gameId === 'ludo' && <LudoBoard state={gameState} mySeat={mySeat} playing={myTurn} onMove={onMove} onRoll={onRoll} />}
-            {gameId === 'snakes' && <SnakesBoard state={gameState} mySeat={mySeat} playing={myTurn} onRoll={onRoll} />}
+            {gameId === 'ludo' && <LudoBoard state={gameState} mySeat={mySeat} playing={myTurn} onMove={onMove} onRoll={onRoll} map={ludoMap} />}
+            {gameId === 'snakes' && <SnakesBoard state={gameState} mySeat={mySeat} playing={myTurn} onRoll={onRoll} map={snakesMap} />}
           </div>
 
           <div className="space-y-4">
@@ -634,7 +655,7 @@ export default function Play() {
             gameId={gameId}
             moves={review.moves}
             seats={review.seats}
-            theme={isReversi ? boardTheme : 'emerald'}
+            theme={isReversi ? boardTheme : gameId === 'ludo' ? ludoMap : gameId === 'snakes' ? snakesMap : 'emerald'}
             onClose={() => setReview(null)}
           />
         </div>
@@ -1081,25 +1102,6 @@ function InviteFriendsModal({ open, room, onClose }) {
       </div>
       <p className="mt-2 text-center text-[11px] text-ink-faint">They'll get a live notification with a one-tap link into this lobby.</p>
     </Modal>
-  )
-}
-
-function ModeCard({ icon: Icon, title, bullets, tone, onClick }) {
-  const tones = {
-    emerald: 'border-emerald-neon/30 hover:border-emerald-neon/60 text-emerald-soft bg-emerald-neon/[.04]',
-    cyan: 'border-cyber-cyan/30 hover:border-cyber-cyan/60 text-cyber-cyan bg-cyber-cyan/[.04]',
-    royal: 'border-royal/40 hover:border-royal/70 text-[#b79dfb] bg-royal/[.06]',
-  }
-  return (
-    <Card onClick={onClick} className={`group flex cursor-pointer flex-col gap-2 p-5 transition-all duration-200 hover:-translate-y-1 ${tones[tone]}`} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
-      <span className={`flex h-11 w-11 items-center justify-center rounded-xl border ${tones[tone]}`}>
-        <Icon size={20} />
-      </span>
-      <h3 className="mt-1 text-[16px] font-bold text-ink">{title}</h3>
-      <ul className="space-y-1 text-xs leading-relaxed text-ink-faint">
-        {bullets.map((b) => <li key={b}>· {b}</li>)}
-      </ul>
-    </Card>
   )
 }
 

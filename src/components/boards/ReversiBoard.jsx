@@ -17,6 +17,11 @@ export const BOARD_THEMES = {
       '--rv-frame-glow': '0 24px 60px -24px rgba(16,229,138,.45), inset 0 1px 0 rgba(255,255,255,.06)',
       '--rv-cell-hover': 'rgba(16,229,138,.14)',
       '--rv-last-ring': 'rgba(16,229,138,.75)',
+      '--rv-frame-border': 'rgba(16,229,138,.28)',
+      '--rv-accent': '#10e58a',
+      '--rv-accent-glow': 'rgba(16,229,138,.55)',
+      '--rv-surface-alt': 'rgba(255,255,255,.012)',
+      '--rv-marker-glow': 'rgba(16,229,138,.25)',
     },
   },
   obsidian: {
@@ -35,6 +40,11 @@ export const BOARD_THEMES = {
       '--rv-frame-glow': '0 24px 60px -26px rgba(148,163,184,.35), inset 0 1px 0 rgba(255,255,255,.05)',
       '--rv-cell-hover': 'rgba(203,213,225,.12)',
       '--rv-last-ring': 'rgba(203,213,225,.7)',
+      '--rv-frame-border': 'rgba(148,163,184,.24)',
+      '--rv-accent': '#94a3b8',
+      '--rv-accent-glow': 'rgba(148,163,184,.4)',
+      '--rv-surface-alt': 'rgba(255,255,255,.01)',
+      '--rv-marker-glow': 'rgba(203,213,225,.2)',
     },
   },
   royal: {
@@ -53,6 +63,11 @@ export const BOARD_THEMES = {
       '--rv-frame-glow': '0 24px 60px -24px rgba(139,92,246,.5), inset 0 1px 0 rgba(255,255,255,.06)',
       '--rv-cell-hover': 'rgba(167,139,250,.16)',
       '--rv-last-ring': 'rgba(196,181,253,.8)',
+      '--rv-frame-border': 'rgba(167,139,250,.3)',
+      '--rv-accent': '#a78bfa',
+      '--rv-accent-glow': 'rgba(167,139,250,.55)',
+      '--rv-surface-alt': 'rgba(255,255,255,.012)',
+      '--rv-marker-glow': 'rgba(167,139,250,.25)',
     },
   },
   classic: {
@@ -71,6 +86,11 @@ export const BOARD_THEMES = {
       '--rv-frame-glow': '0 18px 44px -20px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.08)',
       '--rv-cell-hover': 'rgba(255,255,255,.14)',
       '--rv-last-ring': 'rgba(255,255,255,.85)',
+      '--rv-frame-border': 'rgba(255,244,214,.22)',
+      '--rv-accent': '#e7e2d0',
+      '--rv-accent-glow': 'rgba(231,226,208,.35)',
+      '--rv-surface-alt': 'rgba(0,0,0,.07)',
+      '--rv-marker-glow': 'rgba(255,255,255,.22)',
     },
   },
 }
@@ -97,7 +117,6 @@ export function flipsFor(board, pos, player) {
   return all
 }
 
-const STAR_POINTS = [18, 21, 42, 45] // tournament-style intersection guides
 
 export default function ReversiBoard({ state, mySeat = 0, playing = false, onMove, onPass, theme = 'emerald', lastFlips = null, showHints = true }) {
   const t = BOARD_THEMES[theme] || BOARD_THEMES.emerald
@@ -116,66 +135,113 @@ export default function ReversiBoard({ state, mySeat = 0, playing = false, onMov
   const score = (p) => state.board.filter((v) => v === p + 1).length
 
   return (
-    <div className="mx-auto w-full max-w-[480px]" style={t.css} data-reversi-theme={t.id}>
-      <div className="rounded-[18px] p-[10px] sm:p-[14px]" style={{ background: 'var(--rv-frame)', boxShadow: 'var(--rv-frame-glow)' }}>
-        <div
-          className="relative grid grid-cols-8 overflow-hidden rounded-[8px]"
-          style={{ background: 'var(--rv-surface)' }}
-          role="grid"
-          aria-label="Reversi board"
-        >
-          {Array.from({ length: 7 }, (_, i) => (
-            <div key={`h${i}`} className="pointer-events-none absolute" style={{ left: `${((i + 1) / 8) * 100}%`, top: 0, bottom: 0, width: 1, background: 'var(--rv-line)' }} />
-          ))}
-          {Array.from({ length: 7 }, (_, i) => (
-            <div key={`v${i}`} className="pointer-events-none absolute" style={{ top: `${((i + 1) / 8) * 100}%`, left: 0, right: 0, height: 1, background: 'var(--rv-line)' }} />
-          ))}
-          {STAR_POINTS.map((i) => (
-            <div key={`s${i}`} className="pointer-events-none absolute" style={{
-              left: `${(((i % 8) + 0.5) / 8) * 100}%`, top: `${((Math.floor(i / 8) + 0.5) / 8) * 100}%`,
-              width: 5, height: 5, marginLeft: -2.5, marginTop: -2.5, borderRadius: '50%', background: 'var(--rv-star)',
-            }} />
-          ))}
-          {state.board.map((v, i) => {
-            const legalHere = legal[i]
-            const isLast = lastMove === i
-            const flipIdx = lastFlips ? lastFlips.indexOf(i) : -1
-            return (
-              <button
-                key={i}
-                role="gridcell"
-                aria-label={`Square ${String.fromCharCode(97 + (i % 8))}${Math.floor(i / 8) + 1}${v ? (v === 1 ? ', dark disc' : ', light disc') : legalHere ? ', legal move' : ''}`}
-                disabled={!myTurn || !legalHere}
-                onClick={() => myTurn && legalHere && onMove?.({ i })}
-                className={`relative aspect-square touch-manipulation transition-colors duration-150 outline-none ${legalHere && myTurn ? 'cursor-pointer' : ''}`}
-                style={{ background: legalHere && myTurn ? 'var(--rv-cell-hover)' : 'transparent' }}
-              >
-                {!v && legalHere && myTurn && showHints && (
-                  <span className="absolute left-1/2 top-1/2 h-[26%] w-[26%] -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform hover:scale-125"
-                    style={{ background: 'var(--rv-marker)', boxShadow: 'var(--rv-marker-shadow)', animation: 'pulse-glow 2.2s ease-in-out infinite' }} />
-                )}
-                {!v && legalHere && !myTurn && (
-                  <span className="absolute left-1/2 top-1/2 h-[16%] w-[16%] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: 'rgba(255,255,255,.14)' }} />
-                )}
-                {isLast && (
-                  <span className="pointer-events-none absolute inset-[14%] rounded-full" style={{ border: '2px solid var(--rv-last-ring)', animation: 'pop-in .3s ease' }} />
-                )}
-                {v !== 0 && (
-                  <span
-                    className="rv-disc absolute inset-[9%]"
-                    style={{
-                      transform: `rotateY(${v === 1 ? 0 : 180}deg)`,
-                      transitionDelay: flipIdx >= 0 ? `${Math.min((flipIdx % 6) * 45, 180)}ms` : '0ms',
-                      animation: isLast || flipIdx >= 0 ? 'disc-settle .45s ease' : undefined,
-                    }}
-                  >
-                    <span className="rv-disc-face rv-disc-front" style={{ background: 'linear-gradient(145deg, var(--rv-dark1), var(--rv-dark2))', border: '1.5px solid var(--rv-dark-border)' }} />
-                    <span className="rv-disc-face rv-disc-back" style={{ background: 'linear-gradient(145deg, var(--rv-light1), var(--rv-light2))', border: '1.5px solid var(--rv-light-border)' }} />
-                  </span>
-                )}
-              </button>
-            )
-          })}
+    <div className="mx-auto w-full max-w-[500px]" style={t.css} data-reversi-theme={t.id}>
+      {/* Grandmaster tournament frame — metal rail, corner rivets, coordinate scales */}
+      <div
+        className="relative rounded-[22px] p-[14px] sm:p-[18px]"
+        style={{
+          background: 'var(--rv-frame)',
+          border: '1.5px solid var(--rv-frame-border)',
+          boxShadow: '0 32px 72px rgba(0,0,0,.94), 0 0 36px -8px var(--rv-accent-glow), inset 0 1.5px 2px rgba(255,255,255,.22), 0 0 0 1px rgba(0,0,0,.9)',
+        }}
+      >
+        {['-top-1 -left-1', '-top-1 -right-1', '-bottom-1 -left-1', '-bottom-1 -right-1'].map((pos) => (
+          <span key={pos} className={`absolute ${pos} h-2.5 w-2.5 rounded-full`} style={{
+            background: 'radial-gradient(circle at 32% 30%, rgba(255,255,255,.5), rgba(0,0,0,.9) 70%)',
+            boxShadow: '0 1px 2px rgba(0,0,0,.8), inset 0 0 2px rgba(255,255,255,.4)',
+          }} />
+        ))}
+        <div className="grid" style={{ gridTemplateColumns: '16px 1fr', gridTemplateRows: '16px 1fr', gap: 4 }}>
+          <div />
+          <div className="grid items-center justify-items-center" style={{ gridTemplateColumns: 'repeat(8, 1fr)' }}>
+            {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((l) => (
+              <span key={l} className="text-[10px] font-bold tracking-[0.08em]" style={{ color: 'var(--rv-accent)', textShadow: '0 1px 2px rgba(0,0,0,.9)' }}>{l}</span>
+            ))}
+          </div>
+          <div className="grid items-center justify-items-center" style={{ gridTemplateRows: 'repeat(8, 1fr)' }}>
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((l) => (
+              <span key={l} className="text-[10px] font-bold tracking-[0.08em]" style={{ color: 'var(--rv-accent)', textShadow: '0 1px 2px rgba(0,0,0,.9)' }}>{l}</span>
+            ))}
+          </div>
+          <div
+            className="relative grid grid-cols-8 overflow-hidden rounded-[10px]"
+            style={{
+              background: 'var(--rv-line)',
+              gap: 1,
+              boxShadow: 'inset 0 5px 20px rgba(0,0,0,.88)',
+              border: '1.5px solid var(--rv-accent)',
+            }}
+            role="grid"
+            aria-label="Reversi board"
+          >
+            {state.board.map((v, i) => {
+              const legalHere = legal[i]
+              const isLast = lastMove === i
+              const flipIdx = lastFlips ? lastFlips.indexOf(i) : -1
+              const alt = (Math.floor(i / 8) + (i % 8)) % 2 === 1
+              return (
+                <button
+                  key={i}
+                  role="gridcell"
+                  aria-label={`Square ${String.fromCharCode(97 + (i % 8))}${Math.floor(i / 8) + 1}${v ? (v === 1 ? ', dark disc' : ', light disc') : legalHere ? ', legal move' : ''}`}
+                  disabled={!myTurn || !legalHere}
+                  onClick={() => myTurn && legalHere && onMove?.({ i })}
+                  className={`relative aspect-square touch-manipulation transition-all duration-150 outline-none ${legalHere && myTurn ? 'cursor-pointer' : ''}`}
+                  style={{
+                    background: alt
+                      ? 'linear-gradient(145deg, rgba(255,255,255,.012), transparent), var(--rv-surface-alt)'
+                      : 'radial-gradient(circle at 30% 25%, rgba(255,255,255,.035), transparent 70%), var(--rv-surface)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,.04), inset 0 -1px 2px rgba(0,0,0,.55)',
+                  }}
+                >
+                  {legalHere && myTurn && showHints && (
+                    <span className="pointer-events-none absolute left-1/2 top-1/2 h-[34%] w-[34%] -translate-x-1/2 -translate-y-1/2 rounded-full transition-all duration-200 hover:scale-125"
+                      style={{
+                        border: '2px solid var(--rv-marker)',
+                        background: 'radial-gradient(circle, var(--rv-marker-glow), transparent 70%)',
+                        opacity: 0.85,
+                        boxShadow: 'var(--rv-marker-shadow)',
+                        animation: 'pulse-glow 2.2s ease-in-out infinite',
+                      }} />
+                  )}
+                  {legalHere && !myTurn && (
+                    <span className="pointer-events-none absolute left-1/2 top-1/2 h-[16%] w-[16%] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: 'rgba(255,255,255,.14)' }} />
+                  )}
+                  {isLast && (
+                    <span className="pointer-events-none absolute left-1/2 top-1/2 h-[7%] w-[7%] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{
+                      background: 'var(--rv-accent)',
+                      boxShadow: '0 0 10px var(--rv-marker)',
+                      zIndex: 15,
+                      animation: 'pop-in .3s ease',
+                    }} />
+                  )}
+                  {v !== 0 && (
+                    <span className="absolute inset-[9%]" style={{ perspective: 600 }}>
+                      <span
+                        className="rv-disc block h-full w-full"
+                        style={{
+                          transform: `rotateY(${v === 1 ? 0 : 180}deg)`,
+                          transitionDelay: flipIdx >= 0 ? `${Math.min((flipIdx % 6) * 45, 180)}ms` : '0ms',
+                          animation: isLast || flipIdx >= 0 ? 'disc-settle .45s ease' : undefined,
+                        }}
+                      >
+                        <span className="rv-disc-face rv-disc-front" style={{ background: 'radial-gradient(circle at 30% 26%, var(--rv-dark1) 0%, var(--rv-dark2) 54%, rgba(0,0,0,.95) 100%)', border: '1px solid var(--rv-dark-border)', boxShadow: '0 6px 14px rgba(0,0,0,.88), inset 0 2px 5px rgba(255,255,255,.28)' }} />
+                        <span className="rv-disc-face rv-disc-back" style={{ background: 'radial-gradient(circle at 30% 26%, var(--rv-light1) 0%, var(--rv-light2) 60%, rgba(0,0,0,.18) 100%), var(--rv-light2)', border: '1px solid var(--rv-light-border)', boxShadow: '0 6px 14px rgba(0,0,0,.75), inset 0 2px 4px rgba(255,255,255,.95)' }} />
+                      </span>
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+            {[18, 21, 42, 45].map((p) => (
+              <span key={`hoshi-${p}`} className="pointer-events-none absolute z-[3] h-[6px] w-[6px] rounded-full" style={{
+                left: `${(((p % 8) + 0.5) / 8) * 100}%`, top: `${((Math.floor(p / 8) + 0.5) / 8) * 100}%`,
+                transform: 'translate(-50%, -50%)',
+                background: 'var(--rv-accent)',
+                opacity: 0.75,
+              }} />
+            ))}
+          </div>
         </div>
       </div>
 

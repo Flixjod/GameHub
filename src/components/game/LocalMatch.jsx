@@ -4,8 +4,8 @@ import { ENGINES } from '../../lib/engines.js'
 import { usePref } from '../../lib/prefs.js'
 import ReversiBoard, { BOARD_THEMES } from '../boards/ReversiBoard.jsx'
 import TicTacToeBoard from '../boards/TicTacToeBoard.jsx'
-import LudoBoard, { Dice } from '../boards/LudoBoard.jsx'
-import SnakesBoard from '../boards/SnakesBoard.jsx'
+import LudoBoard, { Dice, LUDO_MAPS } from '../boards/LudoBoard.jsx'
+import SnakesBoard, { SNAKE_MAPS } from '../boards/SnakesBoard.jsx'
 import MatchReview from './MatchReview.jsx'
 import { Button, Modal } from '../UI.jsx'
 
@@ -18,7 +18,7 @@ export const DIFFICULTIES = {
 
 export default function LocalMatch({ gameId, mode, config, onExit }) {
   const eng = ENGINES[gameId]
-  const [theme, setTheme] = usePref(`gh:board-theme-${gameId}`, gameId === 'reversi' ? 'emerald' : 'default')
+  const [theme, setTheme] = usePref(`gh:board-theme-${gameId}`, gameId === 'reversi' ? 'emerald' : gameId === 'ludo' ? 'clubhouse' : gameId === 'snakes' ? 'jungle' : 'default')
   const [state, setState] = useState(() => eng.create(['Player 1', 'Player 2']))
   const [history, setHistory] = useState([])
   const [moves, setMoves] = useState([])
@@ -180,9 +180,9 @@ export default function LocalMatch({ gameId, mode, config, onExit }) {
       return <TicTacToeBoard state={state} mySeat={mySeat} playing={!result && !thinking} onMove={onMove} lastEvent={lastEvent} />
     }
     if (gameId === 'ludo') {
-      return <LudoBoard state={state} mySeat={mySeat} playing={!result} onMove={onMove} onRoll={onRoll} />
+      return <LudoBoard state={state} mySeat={mySeat} playing={!result} onMove={onMove} onRoll={onRoll} map={theme} />
     }
-    return <SnakesBoard state={state} mySeat={mySeat} playing={!result} onRoll={onRoll} />
+    return <SnakesBoard state={state} mySeat={mySeat} playing={!result} onRoll={onRoll} map={theme} />
   }
 
   return (
@@ -276,7 +276,10 @@ export default function LocalMatch({ gameId, mode, config, onExit }) {
 }
 
 export function BoardThemePicker({ theme, setTheme, gameId }) {
-  const themes = gameId === 'reversi' ? Object.values(BOARD_THEMES) : null
+  const themes = gameId === 'reversi' ? Object.values(BOARD_THEMES)
+    : gameId === 'ludo' ? Object.values(LUDO_MAPS)
+    : gameId === 'snakes' ? Object.values(SNAKE_MAPS)
+    : null
   if (!themes || themes.length <= 1) return null
   return (
     <select

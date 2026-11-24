@@ -1,7 +1,6 @@
 import React from 'react'
 
-// Ludo board geometry (15x15). Seats: 0 green(TL-left arm), 1 red(top-right arm),
-// 2 yellow(right-bottom), 3 blue(bottom-left-ish) — classic track below.
+// Ludo board geometry (15x15). Seats: 0 Emerald (TL), 1 Rose (TR), 2 Amber (BR), 3 Azure (BL).
 const TRACK = [
   [6,1],[6,2],[6,3],[6,4],[6,5],
   [5,6],[4,6],[3,6],[2,6],[1,6],[0,6],
@@ -26,31 +25,120 @@ const START_OFFSETS = [0, 13, 26, 39]
 const PLAYER_COLORS = ['#10e58a', '#f43f5e', '#eab308', '#3b82f6']
 const PLAYER_DARK = ['#073b26', '#4c0d1a', '#453203', '#0b2a56']
 const SAFE = new Set([0, 8, 13, 21, 26, 34, 39, 47])
+const YARD_CORNER = [[0, 0], [0, 9], [9, 9], [9, 0]]
 
 export const SEAT_LABELS = ['Emerald', 'Rose', 'Amber', 'Azure']
 
+// Unique board maps — each is a full visual identity, selectable in the lobby.
+export const LUDO_MAPS = {
+  clubhouse: {
+    id: 'clubhouse',
+    name: 'Royal Clubhouse',
+    desc: 'Walnut wood, cream track, tournament colors',
+    css: {
+      '--ld-frame': 'linear-gradient(140deg, #6b4a2a 0%, #4a3018 45%, #2c1c0c 100%)',
+      '--ld-frame-edge': 'rgba(255, 214, 150, 0.28)',
+      '--ld-board': 'linear-gradient(160deg, #efe4c8 0%, #e6d7b4 55%, #d9c69c 100%)',
+      '--ld-cell': 'rgba(58, 40, 18, 0.12)',
+      '--ld-cell-edge': 'rgba(58, 40, 18, 0.34)',
+      '--ld-grid': 'rgba(72, 50, 22, 0.22)',
+      '--ld-safe': '#0e7c55',
+      '--ld-glow': '0 30px 70px -28px rgba(0,0,0,.9), inset 0 1.5px 2px rgba(255,236,200,.5)',
+      '--ld-yard': 'rgba(120, 86, 40, 0.14)',
+      '--ld-num': 'rgba(58,40,18,.55)',
+    },
+    center: ['#0e7c55', '#b3312f', '#c99a1e', '#1d4e9e'],
+    seatTint: ['#0e7c55', '#b3312f', '#c99a1e', '#1d4e9e'],
+    seatTintDark: ['#063c28', '#5c1715', '#6b4d0a', '#0c2b5e'],
+  },
+  neon: {
+    id: 'neon',
+    name: 'Neon Circuit',
+    desc: 'Carbon black, glowing neon lanes',
+    css: {
+      '--ld-frame': 'linear-gradient(140deg, #23262b, #101216 55%, #07080a)',
+      '--ld-frame-edge': 'rgba(16, 229, 138, 0.4)',
+      '--ld-board': 'radial-gradient(130% 130% at 30% 18%, #10151a 0%, #0a0e12 55%, #05070a 100%)',
+      '--ld-cell': 'rgba(255,255,255,.035)',
+      '--ld-cell-edge': 'rgba(255,255,255,.12)',
+      '--ld-grid': 'rgba(148,163,184,.14)',
+      '--ld-safe': '#22d3ee',
+      '--ld-glow': '0 30px 70px -28px rgba(16,229,138,.5), inset 0 1px 1px rgba(255,255,255,.08)',
+      '--ld-yard': 'rgba(255,255,255,.02)',
+      '--ld-num': 'rgba(255,255,255,.4)',
+    },
+    center: PLAYER_COLORS,
+    seatTint: PLAYER_COLORS,
+    seatTintDark: PLAYER_DARK,
+  },
+  ivory: {
+    id: 'ivory',
+    name: 'Ivory Parlor',
+    desc: 'Bone board, brass rails, quiet luxury',
+    css: {
+      '--ld-frame': 'linear-gradient(140deg, #cdb98c 0%, #a98f57 45%, #6f5a2e 100%)',
+      '--ld-frame-edge': 'rgba(255,244,214,.5)',
+      '--ld-board': 'linear-gradient(165deg, #f7f1e3 0%, #efe6d0 60%, #e4d7bb 100%)',
+      '--ld-cell': 'rgba(120, 96, 48, 0.1)',
+      '--ld-cell-edge': 'rgba(120, 96, 48, 0.3)',
+      '--ld-grid': 'rgba(120, 96, 48, 0.2)',
+      '--ld-safe': '#7a5c14',
+      '--ld-glow': '0 30px 70px -28px rgba(0,0,0,.85), inset 0 1.5px 2px rgba(255,250,230,.6)',
+      '--ld-yard': 'rgba(150, 120, 60, 0.12)',
+      '--ld-num': 'rgba(120,96,48,.6)',
+    },
+    center: ['#7a5c14', '#8a3a2c', '#9a7514', '#33537e'],
+    seatTint: ['#0e7c55', '#b3312f', '#c99a1e', '#1d4e9e'],
+    seatTintDark: ['#063c28', '#5c1715', '#6b4d0a', '#0c2b5e'],
+  },
+  midnight: {
+    id: 'midnight',
+    name: 'Emerald Atrium',
+    desc: 'Deep GameHub felt with emerald lighting',
+    css: {
+      '--ld-frame': 'linear-gradient(140deg, #1a2b23, #0c1611 60%, #060a08)',
+      '--ld-frame-edge': 'rgba(16, 229, 138, 0.35)',
+      '--ld-board': 'radial-gradient(130% 130% at 30% 18%, #0f2e20 0%, #0a2016 55%, #06130d 100%)',
+      '--ld-cell': 'rgba(255,255,255,.03)',
+      '--ld-cell-edge': 'rgba(16,229,138,.25)',
+      '--ld-grid': 'rgba(16,229,138,.14)',
+      '--ld-safe': '#22d3ee',
+      '--ld-glow': '0 30px 70px -28px rgba(16,229,138,.55), inset 0 1px 1px rgba(255,255,255,.06)',
+      '--ld-yard': 'rgba(16,229,138,.04)',
+      '--ld-num': 'rgba(255,255,255,.4)',
+    },
+    center: PLAYER_COLORS,
+    seatTint: PLAYER_COLORS,
+    seatTintDark: PLAYER_DARK,
+  },
+}
+
 function rc(seat, p) {
-  if (p === -1) return null // yard
-  if (p === 57) return null // center home
+  if (p === -1) return null
+  if (p === 57) return null
   if (p > 51) return HOME_COLS[seat % 4][p - 52]
   return TRACK[(START_OFFSETS[seat % 4] + p) % 52]
 }
 
 function yardSlot(seat, t) {
-  const corners = [[0, 0], [0, 9], [9, 9], [9, 0]]
-  const [r, c] = corners[seat % 4]
-  const off = [[1.4, 1.4], [1.4, 3.1], [3.4, 1.4], [3.4, 3.1]][t]
+  const [r, c] = YARD_CORNER[seat % 4]
+  const off = [[1.35, 1.35], [1.35, 3.65], [3.65, 1.35], [3.65, 3.65]][t]
   return [r + off[0], c + off[1]]
 }
 
 function centerSlot(seat) {
-  const offs = [[-1.1, -1.1], [-1.1, 0.6], [0.6, 0.6], [0.6, -1.1]][seat % 4]
+  const offs = [[-1.15, -1.15], [-1.15, 0.7], [0.7, 0.7], [0.7, -1.15]][seat % 4]
   return [7.5 + offs[0], 7.5 + offs[1]]
 }
 
 const pct = (v) => `${(v / 15) * 100}%`
 
-export default function LudoBoard({ state, mySeat, playing, onMove, onRoll }) {
+// Members of a seat's color family used for cells per map
+function seatCellColor(map, seat) { return map.seatTint[seat % 4] }
+function seatCellDark(map, seat) { return map.seatTintDark[seat % 4] }
+
+export default function LudoBoard({ state, mySeat, playing, onMove, onRoll, map = 'clubhouse' }) {
+  const m = LUDO_MAPS[map] || LUDO_MAPS.clubhouse
   const seatCount = state.tokens.length
   const roll = state.roll
   const myTurn = playing && state.turn === mySeat
@@ -68,126 +156,202 @@ export default function LudoBoard({ state, mySeat, playing, onMove, onRoll }) {
   }, [myTurn, roll, state.tokens, mySeat])
 
   const occupied = React.useMemo(() => {
-    // map seat->Set of ring squares for capture ring marks
-    const map = {}
+    const count = {}
     state.tokens.forEach((toks, s) => toks.forEach((p) => {
       if (p >= 0 && p <= 51) {
         const sq = (START_OFFSETS[s % 4] + p) % 52
-        ;(map[sq] ||= []).push(s)
+        count[sq] = (count[sq] || 0) + 1
       }
     }))
-    return map
+    return count
   }, [state.tokens])
 
-  // Ludo-King style stacking: tokens sharing the same square shrink and fan out
   const tokenGroups = React.useMemo(() => {
-    const map = new Map()
+    const g = new Map()
     state.tokens.forEach((toks, s) => toks.forEach((p, t) => {
       const pos = p === -1 ? yardSlot(s, t) : p === 57 ? centerSlot(s) : rc(s, p)
       if (!pos) return
       const key = `${pos[0]},${pos[1]}`
-      if (!map.has(key)) map.set(key, [])
-      map.get(key).push({ s, t, pos })
+      if (!g.has(key)) g.set(key, [])
+      g.get(key).push({ s, t, pos })
     }))
-    return [...map.values()]
+    return [...g.values()]
   }, [state.tokens])
 
+  const homeCount = (s) => state.tokens[s].filter((p) => p === 57).length
+
   return (
-    <div className="mx-auto w-full max-w-[440px]">
-      <div className="relative aspect-square w-full rounded-2xl border border-line-2 bg-[#08110d] p-2 shadow-[inset_0_2px_24px_rgba(0,0,0,.6)] overflow-hidden">
-        {/* yards */}
-        {[[0, 0], [0, 9], [9, 9], [9, 0]].map(([r, c], s) => (
-          <div
-            key={s}
-            className="absolute rounded-xl border"
-            style={{
-              left: pct(c + 0.15), top: pct(r + 0.15), width: pct(5.7), height: pct(5.7),
-              background: s < seatCount ? `linear-gradient(140deg, ${PLAYER_COLORS[s]}22, ${PLAYER_DARK[s]}55)` : 'rgba(255,255,255,.02)',
-              borderColor: s < seatCount ? PLAYER_COLORS[s] + '55' : '#1e332855',
-              boxShadow: s < seatCount ? `0 0 24px -8px ${PLAYER_COLORS[s]}66` : 'none',
-            }}
-          >
-            <div className="absolute inset-[14%] rounded-lg border border-dashed" style={{ borderColor: (s < seatCount ? PLAYER_COLORS[s] : '#1e3328') + '44' }} />
-          </div>
-        ))}
+    <div className="mx-auto w-full max-w-[560px]" style={m.css} data-ludo-map={m.id}>
+      <div className="rounded-[26px] p-2.5 sm:p-4" style={{ background: 'var(--ld-frame)', boxShadow: 'var(--ld-glow)', border: '1px solid var(--ld-frame-edge)' }}>
+        <div className="relative aspect-square w-full overflow-hidden rounded-[14px]" style={{ background: 'var(--ld-board)', boxShadow: 'inset 0 3px 18px rgba(0,0,0,.35)' }}>
 
-        {/* track cells */}
-        {TRACK.map(([r, c], idx) => {
-          const startSquares = START_OFFSETS.slice(0, seatCount)
-          const isStart = startSquares.includes(idx) === false ? false : idx === START_OFFSETS[0] ? 0 : START_OFFSETS.indexOf(idx)
-          const seatStart = START_OFFSETS.findIndex((off) => off === idx)
-          const isSafe = SAFE.has(idx) && seatStart === -1
-          const color = seatStart >= 0 ? PLAYER_COLORS[seatStart] : isSafe ? '#22d3ee' : null
-          return (
-            <div
-              key={idx}
-              className="absolute rounded-[3px] border"
-              style={{
-                left: pct(c + 0.18), top: pct(r + 0.18), width: pct(5.5), height: pct(5.5),
-                background: color ? color + (seatStart >= 0 ? 'aa' : '1e') : 'rgba(255,255,255,.025)',
-                borderColor: color ? color + '66' : 'rgba(255,255,255,.06)',
-              }}
-            >
-              {isSafe && <span className="absolute inset-[30%] rounded-full border border-cyber-cyan/50" />}
-              {occupied[idx] && <span className="absolute -top-0.5 -right-0.5 h-1 w-1 rounded-full bg-white/30" />}
-            </div>
-          )
-        })}
-
-        {/* home columns */}
-        {HOME_COLS.slice(0, seatCount).map((col, s) => col.map(([r, c], i) => (
-          <div
-            key={`${s}-${i}`}
-            className="absolute rounded-[3px] border"
-            style={{
-              left: pct(c + 0.18), top: pct(r + 0.18), width: pct(5.5), height: pct(5.5),
-              background: PLAYER_COLORS[s] + '55', borderColor: PLAYER_COLORS[s] + '77',
-            }}
-          />
-        )))}
-
-        {/* center home */}
-        <div className="absolute rounded-lg border border-gold/40" style={{ left: pct(6.15), top: pct(6.15), width: pct(2.7), height: pct(2.7), background: 'conic-gradient(from 45deg, #10e58a44, #f43f5e44, #eab30844, #3b82f644, #10e58a44)' }} />
-
-        {/* tokens — stacked groups fan out around the square centre */}
-        {tokenGroups.map((group) => {
-          const n = group.length
-          const size = n === 1 ? 5.3 : n === 2 ? 3.5 : 3.0
-          const dxs = n === 1 ? [[0, 0]]
-            : n === 2 ? [[-1.35, 0], [1.35, 0]]
-            : n === 3 ? [[-1.3, -1.1], [1.3, -1.1], [0, 1.3]]
-            : [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]
-          return group.map(({ s, t, pos }, gi) => {
-            const isMovable = legal.has(t) && state.turn === s
-            const [dx, dy] = dxs[gi] || [0, 0]
+          {/* yards */}
+          {YARD_CORNER.map(([r, c], s) => {
+            const active = s < seatCount
+            const col = seatCellColor(m, s)
             return (
-              <React.Fragment key={`${s}-${t}`}>
-              <button
-                key={`${s}-${t}`}
-                aria-label={`${SEAT_LABELS[s]} token ${t + 1}${n > 1 ? ` (sharing square ${gi + 1} of ${n})` : ''}`}
-                onClick={() => isMovable && onMove({ token: t })}
-                disabled={!isMovable}
-                className={`absolute rounded-full border-2 transition-all duration-500 ease-out ${isMovable ? 'cursor-pointer hover:scale-110 z-20' : 'z-10'}`}
-                style={{
-                  left: pct(pos[1] + 2.95 + dx - size / 2),
-                  top: pct(pos[0] + 2.95 + dy - size / 2),
-                  width: pct(size), height: pct(size),
-                  background: `radial-gradient(circle at 35% 30%, ${PLAYER_COLORS[s]}dd, ${PLAYER_DARK[s]})`,
-                  borderColor: isMovable ? '#fff' : PLAYER_COLORS[s] + 'cc',
-                  boxShadow: isMovable
-                    ? `0 0 14px 2px ${PLAYER_COLORS[s]}aa, 0 3px 6px rgba(0,0,0,.5)`
-                    : `0 2px 5px rgba(0,0,0,.55)`,
-                  animation: isMovable ? 'pulse-glow 1.4s ease-in-out infinite' : 'none',
-                }}
-              />
-              </React.Fragment>
+              <div key={`y${s}`} className="absolute rounded-2xl" style={{
+                left: pct(c + 0.3), top: pct(r + 0.3), width: pct(5.4), height: pct(5.4),
+                background: active
+                  ? `linear-gradient(140deg, ${col}2e, ${m.seatTintDark[s]}66 85%)`
+                  : 'var(--ld-yard)',
+                border: `1.5px solid ${active ? col + '66' : 'rgba(128,128,128,.15)'}`,
+                boxShadow: active ? `inset 0 0 26px -6px ${col}55, 0 2px 10px rgba(0,0,0,.18)` : 'none',
+              }}>
+                <div className="absolute inset-[9%] rounded-xl" style={{ border: `1.5px dashed ${active ? col + '55' : 'rgba(128,128,128,.14)'}` }} />
+                {active && <span className="absolute left-1/2 top-[6%] -translate-x-1/2 text-[9px] font-extrabold uppercase tracking-[0.18em]" style={{ color: col }}>{SEAT_LABELS[s]}</span>}
+              </div>
             )
-          })
+          })}
+
+          {/* track cells */}
+          {TRACK.map(([r, c], idx) => {
+            const seatStart = START_OFFSETS.findIndex((off) => off === idx)
+            const isSafe = SAFE.has(idx) && seatStart === -1
+            const col = seatStart >= 0 ? seatCellColor(m, seatStart) : isSafe ? 'var(--ld-safe)' : null
+            const dark = seatStart >= 0 ? seatCellDark(m, seatStart) : null
+            return (
+              <div key={idx} className="absolute rounded-[4px]" style={{
+                left: pct(c + 0.08), top: pct(r + 0.08), width: pct(0.86), height: pct(0.86),
+                background: col
+                  ? `linear-gradient(145deg, ${col}bb, ${dark}dd)`
+                  : 'linear-gradient(145deg, var(--ld-cell), rgba(0,0,0,.02))',
+                border: `1px solid ${col ? col + '77' : 'var(--ld-grid)'}`,
+                boxShadow: 'inset 0 1px 1px rgba(255,255,255,.08), inset 0 -1px 2px rgba(0,0,0,.12)',
+              }}>
+                {seatStart >= 0 && (
+                  <span className="absolute inset-[28%] rounded-full" style={{
+                    background: 'rgba(255,255,255,.85)',
+                    boxShadow: `0 0 6px ${col}`,
+                  }} />
+                )}
+                {isSafe && (
+                  <span className="absolute inset-[22%] flex items-center justify-center text-[7px]" style={{ color: 'var(--ld-safe)' }}>★</span>
+                )}
+                {occupied[idx] > 1 && !isSafe && (
+                  <span className="absolute -right-0.5 -top-0.5 h-1 w-1 rounded-full bg-white/40" />
+                )}
+              </div>
+            )
+          })}
+
+          {/* home columns with arrival markers */}
+          {HOME_COLS.slice(0, seatCount).map((cells, s) => cells.map(([r, c], i) => {
+            const col = seatCellColor(m, s)
+            const dark = seatCellDark(m, s)
+            return (
+              <div key={`h${s}-${i}`} className="absolute rounded-[4px]" style={{
+                left: pct(c + 0.08), top: pct(r + 0.08), width: pct(0.86), height: pct(0.86),
+                background: `linear-gradient(145deg, ${col}77, ${dark}99)`,
+                border: `1px solid ${col}88`,
+                boxShadow: 'inset 0 1px 1px rgba(255,255,255,.1)',
+              }}>
+                {i === 4 && <span className="absolute inset-[30%] rounded-full" style={{ background: col, boxShadow: `0 0 8px ${col}` }} />}
+              </div>
+            )
+          }))}
+
+          {/* entry arrows — directional chevrons on the cell after each start */}
+          {START_OFFSETS.slice(0, seatCount).map((off, s) => {
+            const [r, c] = TRACK[off]
+            const rot = [0, 90, 180, 270][s]
+            return (
+              <span key={`a${s}`} className="absolute flex items-center justify-center text-[8px] font-black" style={{
+                left: pct(c + 0.08), top: pct(r + 0.08), width: pct(0.86), height: pct(0.86),
+                transform: `rotate(${rot}deg)`, color: seatCellColor(m, s), opacity: 0.75,
+              }}>➤</span>
+            )
+          })}
+
+          {/* center finish */}
+          <div className="absolute" style={{
+            left: pct(6.15), top: pct(6.15), width: pct(2.7), height: pct(2.7),
+            background: `conic-gradient(from 45deg, ${m.center[0]}cc, ${m.center[1]}cc, ${m.center[2]}cc, ${m.center[3]}cc, ${m.center[0]}cc)`,
+            clipPath: 'polygon(50% 0, 100% 50%, 50% 100%, 0 50%)',
+            borderRadius: '12%',
+            filter: 'drop-shadow(0 2px 6px rgba(0,0,0,.3))',
+          }} />
+          <div className="absolute flex items-center justify-center rounded-full" style={{
+            left: pct(7.05), top: pct(7.05), width: pct(0.9), height: pct(0.9),
+            background: 'rgba(255,255,255,.9)', boxShadow: '0 0 14px rgba(255,255,255,.5), 0 1px 3px rgba(0,0,0,.4)',
+          }}>
+            <span className="text-[7px]">🏆</span>
+          </div>
+
+          {/* tokens — Ludo-King style stack fanning */}
+          {tokenGroups.map((group) => {
+            const n = group.length
+            const size = n === 1 ? 0.92 : n === 2 ? 0.62 : 0.54
+            const dxs = n === 1 ? [[0, 0]]
+              : n === 2 ? [[-0.26, 0], [0.26, 0]]
+              : n === 3 ? [[-0.24, -0.2], [0.24, -0.2], [0, 0.24]]
+              : [[-0.24, -0.24], [0.24, -0.24], [-0.24, 0.24], [0.24, 0.24]]
+            return group.map(({ s, t, pos }, gi) => {
+              const isMovable = legal.has(t) && state.turn === s
+              const [dx, dy] = dxs[gi] || [0, 0]
+              const col = m.seatTint[s]
+              const dark = m.seatTintDark[s]
+              return (
+                <React.Fragment key={`${s}-${t}`}>
+                  {isMovable && (
+                    <span className="absolute rounded-full" style={{
+                      left: pct(pos[1] + 0.5 + dx - (size + 0.42) / 2),
+                      top: pct(pos[0] + 0.5 + dy - (size + 0.42) / 2),
+                      width: pct(size + 0.42), height: pct(size + 0.42),
+                      border: `2px solid ${col}`,
+                      boxShadow: `0 0 12px ${col}88`,
+                      animation: 'pulse-glow 1.4s ease-in-out infinite',
+                      pointerEvents: 'none',
+                    }} />
+                  )}
+                  <button
+                    aria-label={`${SEAT_LABELS[s]} pawn ${t + 1}${n > 1 ? ` (sharing square ${gi + 1} of ${n})` : ''}`}
+                    onClick={() => isMovable && onMove({ token: t })}
+                    disabled={!isMovable}
+                    className={`absolute rounded-full transition-all duration-500 ease-out ${isMovable ? 'z-30 cursor-pointer hover:scale-110' : 'z-20'}`}
+                    style={{
+                      left: pct(pos[1] + 0.5 + dx - size / 2),
+                      top: pct(pos[0] + 0.5 + dy - size / 2),
+                      width: pct(size), height: pct(size),
+                      background: `radial-gradient(circle at 34% 28%, #ffffffcc 0%, ${col} 26%, ${dark} 78%)`,
+                      border: `1.5px solid ${isMovable ? '#fff' : col + 'cc'}`,
+                      boxShadow: isMovable
+                        ? `0 0 14px 3px ${col}bb, 0 4px 8px rgba(0,0,0,.5)`
+                        : `0 3px 7px rgba(0,0,0,.55), inset 0 1.5px 2px rgba(255,255,255,.35)`,
+                      animation: isMovable ? 'pulse-glow 1.4s ease-in-out infinite' : 'none',
+                    }}
+                  />
+                </React.Fragment>
+              )
+            })
+          })}
+        </div>
+      </div>
+
+      {/* seat tracker */}
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+        {state.tokens.slice(0, seatCount).map((_, s) => {
+          const isTurn = state.turn === s
+          const isMe = s === mySeat
+          const col = m.seatTint[s]
+          return (
+            <span key={s} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold transition ${isTurn ? 'scale-[1.04]' : 'opacity-70'}`}
+              style={{
+                borderColor: isTurn ? col : 'rgba(128,128,128,.3)',
+                background: isTurn ? col + '1f' : 'rgba(128,128,128,.06)',
+                color: isTurn ? col : 'inherit',
+                boxShadow: isTurn ? `0 0 14px -2px ${col}88` : 'none',
+              }}>
+              <span className="h-2 w-2 rounded-full" style={{ background: col, boxShadow: `0 0 6px ${col}99` }} />
+              {SEAT_LABELS[s]}{isMe ? ' (you)' : ''}
+              <span className="font-mono text-[10px] opacity-75">{homeCount(s)}/4</span>
+            </span>
+          )
         })}
       </div>
 
       {/* dice */}
-      <div className="mt-4 flex items-center justify-center gap-4">
+      <div className="mt-3 flex items-center justify-center gap-4">
         <Dice roll={roll} canRoll={myTurn && roll == null} onRoll={onRoll} />
       </div>
     </div>

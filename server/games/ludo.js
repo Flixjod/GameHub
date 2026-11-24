@@ -117,7 +117,9 @@ export function applyLudoMove(state, playerIdx, move) {
     return { finished: true, winnerIdx: playerIdx, roll, captured, scores: { [playerIdx]: 4 } }
   }
 
-  if (roll === 6) {
+  // Ludo King rules: a capture or bringing a token home earns another roll.
+  const reachedHome = toks[token] === 57
+  if (roll === 6 || captured || reachedHome) {
     state.roll = null
     return { ok: true, roll, captured, again: true }
   }
