@@ -28,6 +28,7 @@ export function roomSummary(room) {
     players: [...room.players.values()].map((p) => ({
       id: p.user.id, username: p.user.username, displayName: p.user.display_name,
       avatar: p.user.avatar, avatarColor: p.user.avatar_color, isVerified: !!p.user.is_verified,
+      rating: p.user.rating ?? 1000,
       ready: !!p.ready, disconnected: !!p.disconnected, isBot: !!p.isBot,
     })),
     playerCount: room.players.size,

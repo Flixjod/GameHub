@@ -79,6 +79,19 @@ export default function LudoBoard({ state, mySeat, playing, onMove, onRoll }) {
     return map
   }, [state.tokens])
 
+  // Ludo-King style stacking: tokens sharing the same square shrink and fan out
+  const tokenGroups = React.useMemo(() => {
+    const map = new Map()
+    state.tokens.forEach((toks, s) => toks.forEach((p, t) => {
+      const pos = p === -1 ? yardSlot(s, t) : p === 57 ? centerSlot(s) : rc(s, p)
+      if (!pos) return
+      const key = `${pos[0]},${pos[1]}`
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push({ s, t, pos })
+    }))
+    return [...map.values()]
+  }, [state.tokens])
+
   return (
     <div className="mx-auto w-full max-w-[440px]">
       <div className="relative aspect-square w-full rounded-2xl border border-line-2 bg-[#08110d] p-2 shadow-[inset_0_2px_24px_rgba(0,0,0,.6)] overflow-hidden">
@@ -136,30 +149,41 @@ export default function LudoBoard({ state, mySeat, playing, onMove, onRoll }) {
         {/* center home */}
         <div className="absolute rounded-lg border border-gold/40" style={{ left: pct(6.15), top: pct(6.15), width: pct(2.7), height: pct(2.7), background: 'conic-gradient(from 45deg, #10e58a44, #f43f5e44, #eab30844, #3b82f644, #10e58a44)' }} />
 
-        {/* tokens */}
-        {state.tokens.map((toks, s) => toks.map((p, t) => {
-          const pos = p === -1 ? yardSlot(s, t) : p === 57 ? centerSlot(s) : rc(s, p)
-          if (!pos) return null
-          const isMovable = legal.has(t) && state.turn === s
-          return (
-            <button
-              key={`${s}-${t}`}
-              aria-label={`${SEAT_LABELS[s]} token ${t + 1}`}
-              onClick={() => isMovable && onMove({ token: t })}
-              disabled={!isMovable}
-              className={`absolute z-10 rounded-full border-2 transition-all duration-500 ease-out ${isMovable ? 'cursor-pointer hover:scale-110 z-20' : 'cursor-default'}`}
-              style={{
-                left: pct(pos[1] + 0.3), top: pct(pos[0] + 0.3), width: pct(5.3), height: pct(5.3),
-                background: `radial-gradient(circle at 35% 30%, ${PLAYER_COLORS[s]}dd, ${PLAYER_DARK[s]})`,
-                borderColor: isMovable ? '#fff' : PLAYER_COLORS[s] + 'cc',
-                boxShadow: isMovable
-                  ? `0 0 14px 2px ${PLAYER_COLORS[s]}aa, 0 3px 6px rgba(0,0,0,.5)`
-                  : `0 2px 5px rgba(0,0,0,.55)`,
-                animation: isMovable ? 'pulse-glow 1.4s ease-in-out infinite' : 'none',
-              }}
-            />
-          )
-        }))}
+        {/* tokens — stacked groups fan out around the square centre */}
+        {tokenGroups.map((group) => {
+          const n = group.length
+          const size = n === 1 ? 5.3 : n === 2 ? 3.5 : 3.0
+          const dxs = n === 1 ? [[0, 0]]
+            : n === 2 ? [[-1.35, 0], [1.35, 0]]
+            : n === 3 ? [[-1.3, -1.1], [1.3, -1.1], [0, 1.3]]
+            : [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]
+          return group.map(({ s, t, pos }, gi) => {
+            const isMovable = legal.has(t) && state.turn === s
+            const [dx, dy] = dxs[gi] || [0, 0]
+            return (
+              <React.Fragment key={`${s}-${t}`}>
+              <button
+                key={`${s}-${t}`}
+                aria-label={`${SEAT_LABELS[s]} token ${t + 1}${n > 1 ? ` (sharing square ${gi + 1} of ${n})` : ''}`}
+                onClick={() => isMovable && onMove({ token: t })}
+                disabled={!isMovable}
+                className={`absolute rounded-full border-2 transition-all duration-500 ease-out ${isMovable ? 'cursor-pointer hover:scale-110 z-20' : 'z-10'}`}
+                style={{
+                  left: pct(pos[1] + 2.95 + dx - size / 2),
+                  top: pct(pos[0] + 2.95 + dy - size / 2),
+                  width: pct(size), height: pct(size),
+                  background: `radial-gradient(circle at 35% 30%, ${PLAYER_COLORS[s]}dd, ${PLAYER_DARK[s]})`,
+                  borderColor: isMovable ? '#fff' : PLAYER_COLORS[s] + 'cc',
+                  boxShadow: isMovable
+                    ? `0 0 14px 2px ${PLAYER_COLORS[s]}aa, 0 3px 6px rgba(0,0,0,.5)`
+                    : `0 2px 5px rgba(0,0,0,.55)`,
+                  animation: isMovable ? 'pulse-glow 1.4s ease-in-out infinite' : 'none',
+                }}
+              />
+              </React.Fragment>
+            )
+          })
+        })}
       </div>
 
       {/* dice */}

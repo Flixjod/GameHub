@@ -3,15 +3,17 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Loader2, DoorOpen, Bot, Zap, Users, LogOut, CheckCircle2,
   Timer, Swords, RotateCcw, Gamepad2, ArrowLeft, Copy, Globe2, WifiOff, Cpu,
-  Eye, Undo2, Crown, ChevronDown, History, Sparkles,
+  Eye, Undo2, ChevronDown, History, Sparkles, Shuffle, UserPlus, Link2,
 } from 'lucide-react'
+import { api } from '../lib/api.js'
 import { useAuth, useSocket, useToast } from '../store.jsx'
-import { Pic, Badge, Button, Card, VerifiedIcon, EmptyState, Modal } from '../components/UI.jsx'
+import { Pic, Badge, Button, Card, VerifiedIcon, EmptyState, Modal, Skeleton } from '../components/UI.jsx'
 import TicTacToeBoard from '../components/boards/TicTacToeBoard.jsx'
 import ReversiBoard from '../components/boards/ReversiBoard.jsx'
 import LudoBoard from '../components/boards/LudoBoard.jsx'
 import SnakesBoard from '../components/boards/SnakesBoard.jsx'
 import { GAME_ART } from '../components/GameArt.jsx'
+import { useRooms } from '../components/GameCard.jsx'
 import LocalMatch from '../components/game/LocalMatch.jsx'
 import MatchReview from '../components/game/MatchReview.jsx'
 import { usePref } from '../lib/prefs.js'
@@ -22,6 +24,12 @@ const GAME_META = {
   ludo: { name: 'Ludo', tagline: 'Roll. Move. Win.' },
   snakes: { name: 'Snake & Ladder', tagline: 'Climb. Don’t Fall.' },
 }
+
+const TABLE_NAMES = [
+  'Emerald Table', 'Obsidian Lounge', 'Cyan Parlor', 'Golden Arcade',
+  'Velvet Arena', 'Neon Salon', 'Royal Stage', 'Midnight Cube',
+]
+const randomTableName = () => TABLE_NAMES[Math.floor(Math.random() * TABLE_NAMES.length)]
 
 const SEAT_COLORS = [
   { name: 'Emerald', color: '#10e58a' },
@@ -68,6 +76,7 @@ export default function Play() {
   const [boardTheme, setBoardTheme] = usePref('gh:board-theme-reversi', 'emerald')
   const [recentLocal, setRecentLocal] = useState([])
   const [rulesOpen, setRulesOpen] = useState(false)
+  const [inviteOpen, setInviteOpen] = useState(false)
   const stateRef = useRef(null)
   stateRef.current = { room, gameState, turnSeat, phase, spectator }
   const autoFlowDone = useRef(false)
@@ -255,8 +264,14 @@ export default function Play() {
       socket.emit('room:ready', { code: res.code, ready: true })
     })
   }
-  const createRoom = () => {
-    socket.emit('room:create', { game: gameId, name: `${user.displayName}’s Room`, isPrivate: true, ranked: onlineKind === 'ranked' }, (res) => {
+  const createLobby = (opts = {}) => {
+    socket.emit('room:create', {
+      game: gameId,
+      name: opts.name || randomTableName(),
+      isPrivate: opts.isPrivate ?? false,
+      ranked: opts.ranked ?? onlineKind === 'ranked',
+      maxPlayers: opts.maxPlayers,
+    }, (res) => {
       if (res?.error) return toast(res.error, 'error')
       setRoom(res.room)
       setPhase('waiting')
@@ -341,30 +356,15 @@ export default function Play() {
       )}
 
       {phase === 'lobby' && modePanel === 'online' && (
-        <Card className="animate-fade-in space-y-4 p-6">
-          <div className="flex items-center gap-3">
-            <button onClick={backFromPanel} className="cursor-pointer rounded-lg border border-line p-2 text-ink-dim transition hover:text-ink" aria-label="Back"><ArrowLeft size={15} /></button>
-            <div>
-              <h2 className="text-lg font-bold">Online multiplayer</h2>
-              <p className="text-xs text-ink-faint">Queues pair you with another live player — {meta.name}, best of one.</p>
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <button onClick={() => setOnlineKind('ranked')} className={`cursor-pointer rounded-xl border p-4 text-left transition ${onlineKind === 'ranked' ? 'border-gold/50 bg-gold/[.06]' : 'border-line bg-white/[.02] hover:border-gold/30'}`}>
-              <div className="flex items-center gap-2"><Crown size={16} className="text-gold" /><span className="text-sm font-bold">Ranked</span></div>
-              <p className="mt-1 text-xs text-ink-faint">Elo is at stake — every rated win moves the ladder.</p>
-            </button>
-            <button onClick={() => setOnlineKind('casual')} className={`cursor-pointer rounded-xl border p-4 text-left transition ${onlineKind === 'casual' ? 'border-cyber-cyan/50 bg-cyber-cyan/[.06]' : 'border-line bg-white/[.02] hover:border-cyber-cyan/30'}`}>
-              <div className="flex items-center gap-2"><Sparkles size={16} className="text-cyber-cyan" /><span className="text-sm font-bold">Casual</span></div>
-              <p className="mt-1 text-xs text-ink-faint">Same rules, zero pressure — XP only, rating untouched.</p>
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="lg" onClick={quickMatch}><Zap size={16} /> Find opponent</Button>
-            <Button variant="outline" size="lg" onClick={createRoom}><Users size={16} /> Create private room</Button>
-          </div>
-          <JoinByCodeCard onJoin={joinByCode} />
-        </Card>
+        <OnlinePanel
+          gameId={gameId}
+          onlineKind={onlineKind}
+          setOnlineKind={setOnlineKind}
+          onBack={backFromPanel}
+          onQuick={quickMatch}
+          onCreate={createLobby}
+          onJoin={joinByCode}
+        />
       )}
 
       {phase === 'lobby' && modePanel === 'local' && (
@@ -408,55 +408,93 @@ export default function Play() {
       )}
 
       {phase === 'waiting' && room && (
-        <Card className="animate-fade-in p-6">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-bold">{room.name}</h2>
-              <button onClick={() => { navigator.clipboard?.writeText(room.code); toast('Room code copied', 'success') }}
-                className="mt-0.5 inline-flex items-center gap-1.5 text-xs font-semibold text-ink-faint transition hover:text-emerald-soft cursor-pointer">
-                Room <span className="font-mono tracking-[0.25em] text-emerald-soft">{room.code}</span> <Copy size={11} />
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              {room.ranked ? <Badge tone="gold">Ranked</Badge> : <Badge tone="cyan">Casual</Badge>}
-              <Badge tone="dim">{room.gameName} · {room.playerCount}/{room.maxPlayers}</Badge>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            {room.players.map((p, idx) => <SeatCard key={p.id} p={p} idx={idx} />)}
-            {Array.from({ length: Math.max(0, room.maxPlayers - room.players.length) }).map((_, i) => (
-              <div key={`empty-${i}`} className="flex min-h-[86px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-2/70 text-ink-faint">
-                <Users size={18} className="animate-pulse-glow" />
-                <span className="text-[11px] font-semibold">Waiting for player…</span>
+        <div className="animate-fade-in" >
+          <Card className="space-y-5 border-emerald-neon/25 p-5 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-line pb-4">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-neon" />
+                <span className="text-xs font-semibold text-ink-dim">Room</span>
+                <button
+                  onClick={() => { navigator.clipboard?.writeText(room.code); toast('Room code copied', 'success') }}
+                  className="cursor-pointer rounded-lg border border-line-2 bg-white/[.05] px-2.5 py-0.5 font-mono text-base font-bold tracking-[0.2em] text-emerald-soft transition hover:border-emerald-neon/50"
+                  title="Copy room code"
+                >{room.code}</button>
+                <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold ${
+                  room.players.length >= Math.max(2, room.maxPlayers) && room.players.every((p) => p.ready || p.isBot)
+                    ? 'border-emerald-neon/40 bg-emerald-neon/10 text-emerald-soft'
+                    : 'border-gold/40 bg-gold/10 text-amber-200'}`}
+                >
+                  {room.players.length >= Math.max(2, room.maxPlayers) && room.players.every((p) => p.ready || p.isBot) ? 'ALL READY' : 'WAITING FOR PLAYERS'}
+                </span>
+                {room.ranked ? <Badge tone="gold">Ranked</Badge> : <Badge tone="cyan">Casual</Badge>}
               </div>
-            ))}
-          </div>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => { navigator.clipboard?.writeText(room.code); toast('Room code copied', 'success') }}><Copy size={13} /> Copy code</Button>
+                <Button
+                  variant="ghost" size="sm"
+                  onClick={() => {
+                    const link = `${window.location.origin}/play/${room.game}?room=${room.code}`
+                    navigator.clipboard?.writeText(link)
+                    toast('Invite link copied', 'success')
+                  }}
+                ><Link2 size={13} /> Copy link</Button>
+              </div>
+            </div>
 
-          <p className="mt-4 text-sm text-ink-dim">
-            {isHost && room.playerCount < 2 ? 'Add a bot to fill the seat, invite a friend, or share the room code — the match starts when every seat has readied up.'
-              : isHost ? 'Press Ready to arm the match — it starts when every player is armed. Or add a bot to fill the seat.'
-              : room.hasBot ? 'Host may add a bot to fill empty seats. Arm up when ready.'
-              : room.playerCount < 2 ? `Share room code ${room.code} with a friend — or invite from the Friends page.`
-              : 'Arm up — the match starts when everyone is ready.'}
-          </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {Array.from({ length: room.maxPlayers }).map((_, idx) => {
+                const p = room.players[idx]
+                if (!p) {
+                  return (
+                    <div key={`empty-${idx}`} className="flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-line-2/70 text-ink-faint">
+                      <Users size={18} className="animate-pulse-glow" />
+                      <span className="text-[11px] font-semibold">Waiting for player…</span>
+                      {isHost && (
+                        <button
+                          onClick={() => socket.emit('room:add-bot', { code: room.code })}
+                          className="cursor-pointer rounded-lg border border-line-2 px-2.5 py-1 text-[10px] font-semibold text-ink-dim transition hover:border-emerald-neon/40 hover:text-ink"
+                        >
+                          <Bot size={11} className="mr-1 inline" /> Fill with AI
+                        </button>
+                      )}
+                    </div>
+                  )
+                }
+                return <SeatCard key={p.id} p={p} idx={idx} maxPlayers={room.maxPlayers} />
+              })}
+            </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {!spectator && (
-              <Button onClick={toggleReady} size="lg" className="min-w-[170px]">
-                <CheckCircle2 size={16} /> {isReady() ? 'Ready ✓' : 'Ready up'}
-              </Button>
-            )}
-            {spectator && <Badge tone="cyan">Spectating — match or room in progress</Badge>}
-            {isHost && !room.hasBot && room.playerCount < room.maxPlayers && (
-              <Button variant="outline" size="lg" onClick={() => socket.emit('room:add-bot', { code: room.code })}><Bot size={16} /> Add bot to fill</Button>
-            )}
-            {isHost && room.hasBot && (
-              <Button variant="outline" size="lg" onClick={() => socket.emit('room:kick-bot', { code: room.code })}><Gamepad2 size={16} /> Remove bot</Button>
-            )}
-            <Button variant="danger" size="lg" onClick={leaveCurrentRoom}><LogOut size={16} /> Leave room</Button>
-          </div>
-        </Card>
+            <p className="text-xs leading-relaxed text-ink-faint">
+              {room.playerCount < 2
+                ? 'Share the code or copy the invite link — friends get a one-tap invite below.'
+                : room.hasBot
+                  ? 'Arm up when ready — the match starts the moment every seat is armed.'
+                  : 'Arm up — the match starts when every player is armed.'}
+            </p>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+              <Button variant="danger" onClick={leaveCurrentRoom}><LogOut size={15} /> Leave lobby</Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => setInviteOpen(true)}><UserPlus size={15} /> Invite friends</Button>
+                {isHost && room.hasBot && (
+                  <Button variant="outline" onClick={() => socket.emit('room:kick-bot', { code: room.code })}><Gamepad2 size={15} /> Remove AI</Button>
+                )}
+                {!spectator && (
+                  <Button onClick={toggleReady} className="min-w-[170px]">
+                    <CheckCircle2 size={16} /> {isReady() ? 'Unready' : 'Ready up'}
+                  </Button>
+                )}
+                {spectator && <Badge tone="cyan">Spectating — match in progress</Badge>}
+              </div>
+            </div>
+          </Card>
+
+          <InviteFriendsModal
+            open={inviteOpen}
+            room={room}
+            onClose={() => setInviteOpen(false)}
+          />
+        </div>
       )}
 
       {phase === 'playing-local' && localConfig && (
@@ -719,38 +757,6 @@ function ReversiLobbyExtras({ rulesOpen, setRulesOpen, recentLocal }) {
   )
 }
 
-function JoinByCodeCard({ onJoin }) {
-  const [code, setCode] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState(null)
-  const submit = (e) => {
-    e.preventDefault()
-    if (!code.trim() || busy) return
-    setBusy(true); setErr(null)
-    onJoin(code.trim().toUpperCase(), (error) => {
-      setBusy(false)
-      if (error) setErr(error)
-    })
-  }
-  return (
-    <form onSubmit={submit} className="rounded-xl border border-line bg-white/[.02] p-4">
-      <label className="text-[11px] font-bold uppercase tracking-wider text-ink-faint" htmlFor="join-code">Join with room code</label>
-      <div className="mt-2 flex gap-2">
-        <input
-          id="join-code"
-          value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          placeholder="e.g. XK7Q2M"
-          maxLength={6}
-          className="min-w-0 flex-1 rounded-lg border border-line bg-panel-2 px-3 py-2 font-mono text-sm font-bold tracking-[0.3em] uppercase focus:border-emerald-neon/50"
-        />
-        <Button size="md" type="submit" disabled={!code.trim() || busy}>Join room</Button>
-      </div>
-      {err && <p className="mt-2 text-xs font-semibold text-red-300">{err}</p>}
-    </form>
-  )
-}
-
 // ---------------- offline local setup ----------------
 function LocalSetup({ gameId, onStart, onBack }) {
   const [p1, setP1] = useState('Player 1')
@@ -852,22 +858,229 @@ function ToggleRow({ allowUndo, setAllowUndo, hints, setHints }) {
 }
 
 // ---------------- shared bits ----------------
-function SeatCard({ p, idx }) {
+function SeatCard({ p, idx, maxPlayers = 2 }) {
+  const seatLabel = maxPlayers > 2 ? `Seat ${idx + 1}` : idx === 0 ? 'Seat 1 · Host' : 'Seat 2'
   return (
-    <div className="flex min-h-[86px] items-center gap-3 rounded-xl border border-line bg-white/[.02] p-3.5">
-      <Pic user={p} size={42} />
-      <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1 truncate text-sm font-bold">{p.displayName} {p.isVerified ? <VerifiedIcon size={12} /> : null}</p>
-        <p className="text-[10px] text-ink-faint">
-          {p.isBot ? 'House bot' : `@${p.username}`}
-          {!p.isBot && p.disconnected ? <span className="ml-1.5 font-semibold text-red-300">· reconnecting…</span> : null}
-        </p>
+    <div className="rounded-2xl border bg-black/40 p-4 transition" style={{ borderColor: p.ready ? SEAT_COLORS[idx % 4].color + '55' : 'var(--line)' }}>
+      <div className="mb-2.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider">
+        <span className="text-ink-faint">{seatLabel}</span>
+        <span style={{ color: p.ready ? SEAT_COLORS[idx % 4].color : '#eab308' }}>
+          {p.ready ? '● READY' : '○ WAITING'}
+        </span>
       </div>
-      <span className="rounded-lg px-2.5 py-1 text-[10px] font-bold" style={{ background: SEAT_COLORS[idx % 4].color + '1c', color: SEAT_COLORS[idx % 4].color, border: `1px solid ${SEAT_COLORS[idx % 4].color}44` }}>
-        {SEAT_COLORS[idx % 4].name}
-      </span>
-      {p.ready ? <CheckCircle2 size={16} className="text-emerald-neon" /> : <span className="h-4 w-4 rounded-full border border-line-2" />}
+      <div className="flex items-center gap-3">
+        <Pic user={p} size={42} />
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1 truncate text-sm font-bold">{p.displayName} {p.isVerified ? <VerifiedIcon size={12} /> : null}</p>
+          <p className="mt-0.5 font-mono text-[10px] text-ink-faint">
+            {p.isBot ? `HOUSE AI · ${p.rating ?? 1000} elo` : `@${p.username} · ${p.rating ?? 1000} elo`}
+            {!p.isBot && p.disconnected ? <span className="ml-1.5 font-semibold text-red-300">· reconnecting…</span> : null}
+          </p>
+        </div>
+        <span className="rounded-lg px-2.5 py-1 text-[10px] font-bold" style={{ background: SEAT_COLORS[idx % 4].color + '1c', color: SEAT_COLORS[idx % 4].color, border: `1px solid ${SEAT_COLORS[idx % 4].color}44` }}>
+          {SEAT_COLORS[idx % 4].name}
+        </span>
+      </div>
     </div>
+  )
+}
+
+function OnlinePanel({ gameId, onlineKind, setOnlineKind, onBack, onQuick, onCreate, onJoin }) {
+  const rooms = useRooms()
+  const [name, setName] = useState(randomTableName)
+  const [access, setAccess] = useState('open')
+  const [seatCount, setSeatCount] = useState(2)
+  const [code, setCode] = useState('')
+  const [joinError, setJoinError] = useState(null)
+  const navigate = useNavigate()
+  const multiSeat = gameId === 'ludo' || gameId === 'snakes'
+  const openTables = rooms.filter((r) => r.game === gameId && !r.inGame)
+
+  const submitJoin = (e) => {
+    e?.preventDefault()
+    setJoinError(null)
+    onJoin(code.trim().toUpperCase(), (err) => {
+      if (err) setJoinError(err)
+      else setCode('')
+    })
+  }
+
+  return (
+    <div className="animate-fade-in space-y-4">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="cursor-pointer rounded-lg border border-line p-2 text-ink-dim transition hover:text-ink" aria-label="Back"><ArrowLeft size={15} /></button>
+        <div>
+          <h2 className="text-lg font-bold">Online multiplayer</h2>
+          <p className="text-xs text-ink-faint">Host a table, join a friend's lobby, or let matchmaking pair you.</p>
+        </div>
+        <div className="ml-auto inline-flex rounded-xl border border-line bg-black/60 p-1 gap-1">
+          <button onClick={() => setOnlineKind('casual')} className={`cursor-pointer rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${onlineKind === 'casual' ? 'border border-cyber-cyan/40 bg-cyber-cyan/15 text-cyber-cyan' : 'text-ink-faint hover:text-ink'}`}>Casual</button>
+          <button onClick={() => setOnlineKind('ranked')} className={`cursor-pointer rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${onlineKind === 'ranked' ? 'border border-gold/40 bg-gold/15 text-amber-200' : 'text-ink-faint hover:text-ink'}`}>Ranked</button>
+        </div>
+      </div>
+
+      <div className="grid items-stretch gap-4 md:grid-cols-2">
+        <Card className="space-y-4 p-5">
+          <div className="flex items-center justify-between border-b border-line pb-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-soft">Create lobby</span>
+            <span className="font-mono text-[10px] text-ink-faint">HOST TABLE</span>
+          </div>
+          <div>
+            <label htmlFor="gh-table-name" className="mb-1.5 block text-[10px] uppercase tracking-wider text-ink-faint">Table name</label>
+            <div className="flex gap-2">
+              <input
+                id="gh-table-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={32}
+                className="min-w-0 flex-1 rounded-xl border border-line bg-black/60 px-3 py-2 text-xs focus:border-emerald-neon/50 focus:outline-none"
+              />
+              <button
+                onClick={() => setName(randomTableName())}
+                className="cursor-pointer rounded-xl border border-line px-2.5 py-2 text-xs text-ink-dim transition hover:border-emerald-neon/40 hover:text-ink"
+                title="Shuffle table name"
+              ><Shuffle size={13} /></button>
+            </div>
+          </div>
+          {multiSeat && (
+            <div>
+              <label htmlFor="gh-table-seats" className="mb-1.5 block text-[10px] uppercase tracking-wider text-ink-faint">Seats</label>
+              <select
+                id="gh-table-seats"
+                value={seatCount}
+                onChange={(e) => setSeatCount(Number(e.target.value))}
+                className="w-full rounded-xl border border-line bg-black/60 px-2.5 py-2 text-xs focus:border-emerald-neon/50 focus:outline-none"
+              >
+                <option value={2}>2 players · duel</option>
+                <option value={3}>3 players · triple</option>
+                <option value={4}>4 players · Ludo King style</option>
+              </select>
+            </div>
+          )}
+          <div>
+            <label htmlFor="gh-table-access" className="mb-1.5 block text-[10px] uppercase tracking-wider text-ink-faint">Access</label>
+            <select
+              id="gh-table-access"
+              value={access}
+              onChange={(e) => setAccess(e.target.value)}
+              className="w-full rounded-xl border border-line bg-black/60 px-2.5 py-2 text-xs focus:border-emerald-neon/50 focus:outline-none"
+            >
+              <option value="open">🌐 Open — listed for everyone</option>
+              <option value="private">🔒 Private — invite or code only</option>
+            </select>
+          </div>
+          {access === 'open' && onlineKind === 'ranked' && (
+            <p className="rounded-lg border border-gold/25 bg-gold/[.05] px-3 py-2 text-[11px] text-amber-200/90">Open tables are visible in the directory below — anyone can hop in.</p>
+          )}
+          <Button className="w-full" size="lg" onClick={() => onCreate({ name: name.trim() || undefined, isPrivate: access === 'private', maxPlayers: multiSeat ? seatCount : undefined })}>
+            <Users size={15} /> Create lobby
+          </Button>
+        </Card>
+
+        <Card className="flex flex-col justify-between space-y-4 p-5">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-line pb-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-cyber-cyan">Join lobby</span>
+              <span className="font-mono text-[10px] text-ink-faint">DIRECT CODE</span>
+            </div>
+            <div>
+              <label htmlFor="gh-join-code" className="mb-1.5 block text-[10px] uppercase tracking-wider text-ink-faint">Room code</label>
+              <form className="flex gap-2" onSubmit={submitJoin}>
+                <input
+                  id="gh-join-code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                  maxLength={6}
+                  placeholder="AB12C"
+                  className="min-w-0 flex-1 rounded-xl border border-line bg-black/60 px-3 py-2 font-mono text-xs uppercase tracking-[0.2em] focus:border-cyber-cyan/60 focus:outline-none"
+                />
+                <Button variant="outline" size="sm" type="submit" disabled={code.trim().length < 4}>Join →</Button>
+              </form>
+              {joinError && <p className="mt-2 text-[11px] font-semibold text-red-300">{joinError}</p>}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="lg" className="flex-1" onClick={onQuick}><Zap size={15} /> Find opponent</Button>
+            </div>
+            <p className="text-[11px] leading-relaxed text-ink-faint">
+              Anyone can join an open table below — or enter a code shared with you. Inviting a friend is the fastest way in.
+            </p>
+          </div>
+        </Card>
+      </div>
+
+      <Card className="space-y-3 p-5">
+        <div className="flex items-center justify-between border-b border-line pb-3">
+          <span className="text-xs font-bold uppercase tracking-wider text-emerald-soft">Open lobbies</span>
+          <span className="font-mono text-[10px] text-ink-faint">LIVE · {openTables.length}</span>
+        </div>
+        {openTables.length === 0 ? (
+          <EmptyState emoji="🪑" title="No open lobbies right now" body="Create one above and share the code — or start matchmaking." compact />
+        ) : (
+          <div className="space-y-2">
+            {openTables.map((r) => (
+              <div key={r.code} className="flex items-center gap-3 rounded-xl border border-line bg-black/40 px-3.5 py-2.5 transition hover:border-emerald-neon/40">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg text-lg" style={{ background: 'linear-gradient(140deg, #0f1a15, #0a0f0d)' }}>{GAME_ART[r.game]?.emoji || '🎮'}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-bold">{r.name} <span className="ml-1 font-mono text-[10px] font-semibold text-emerald-soft">{r.code}</span></p>
+                  <p className="text-[10px] text-ink-faint">
+                    {r.players[0]?.displayName || 'Host'} · {r.playerCount}/{r.maxPlayers} seated{r.hasBot ? ' · AI seat' : ''}
+                  </p>
+                </div>
+                {r.ranked ? <Badge tone="gold">Ranked</Badge> : <Badge tone="cyan">Casual</Badge>}
+                <Button size="sm" onClick={() => onJoin(r.code)} disabled={r.playerCount >= r.maxPlayers}>Join</Button>
+              </div>
+            ))}
+          </div>
+        )}
+        {openTables.length === 0 && (
+          <Button variant="ghost" size="sm" onClick={() => navigate(`/?rooms=1#rooms`)} className="w-full">Browse rooms on the dashboard →</Button>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+function InviteFriendsModal({ open, room, onClose }) {
+  const { socket } = useSocket()
+  const toast = useToast()
+  const [friends, setFriends] = useState(null)
+  const [invited, setInvited] = useState([])
+  useEffect(() => {
+    if (!open) return
+    setFriends(null)
+    setInvited([])
+    api('/friends').then((d) => setFriends(d.friends)).catch(() => setFriends([]))
+  }, [open])
+  if (!open) return null
+
+  const invite = (f) => {
+    socket.emit('room:invite', { code: room.code, friendId: f.id })
+    setInvited((x) => [...x, f.id])
+    toast(`Invite sent to ${f.displayName}`, 'success')
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Invite friends to ${room.code}`}>
+      <div className="max-h-[380px] space-y-2 overflow-y-auto p-1">
+        {friends === null && <div className="space-y-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} h="h-12" />)}</div>}
+        {friends?.length === 0 && (
+          <EmptyState emoji="🫂" title="No friends yet" body="Add friends from the Friends page, then invite them to any table." compact />
+        )}
+        {friends?.map((f) => (
+          <div key={f.id} className="flex items-center gap-3 rounded-xl border border-line bg-white/[.02] px-3.5 py-2.5">
+            <Pic user={f} size={36} />
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-1 truncate text-xs font-bold">{f.displayName} {f.isVerified ? <VerifiedIcon size={11} /> : null}</p>
+              <p className="text-[10px] text-ink-faint">{f.online ? '🟢 Online now' : 'Offline'} · {f.rating ?? 1000} elo</p>
+            </div>
+            <Button size="sm" variant={invited.includes(f.id) ? 'ghost' : 'outline'} disabled={invited.includes(f.id)} onClick={() => invite(f)}>
+              {invited.includes(f.id) ? 'Sent ✓' : 'Invite'}
+            </Button>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-center text-[11px] text-ink-faint">They'll get a live notification with a one-tap link into this lobby.</p>
+    </Modal>
   )
 }
 
