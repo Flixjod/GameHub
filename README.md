@@ -10,20 +10,49 @@ there are no hardcoded dummy statistics for the signed-in player.
 
 ## Games
 
-All four games are fully playable, with server-validated moves, turn
+All six games are fully playable, with server-validated moves, turn
 and version checks (duplicate moves are rejected), timers, win / loss /
 draw detection, result screens, and match history:
 
-| Game | Tagline |
-| --- | --- |
-| **Reversi** | Flip. Conquer. Win. |
-| **Ludo** | Roll. Move. Win. |
-| **Snake & Ladder** | Climb. Don't Fall. |
-| **TicTacToe** | Think. Win. |
+| Game | Tagline | Category |
+| --- | --- | --- |
+| **Reversi** | Flip. Conquer. Win. | Strategy |
+| **Ludo** | Roll. Move. Win. | Board |
+| **Snake & Ladder** | Climb. Don't Fall. | Casual |
+| **TicTacToe** | Think. Win. | Strategy |
+| **Connect Four** | Drop. Align. Win. | Strategy |
+| **RPS Blitz** | Read. React. Win. | Casual |
 
 Game rules live in `server/src/games.ts`. The client never decides a
 result on its own: moves are sent to server actions, validated there,
 and only the server's returned state is rendered.
+
+## Match modes and the waiting room
+
+Every game can be played in three modes, chosen from the play dialog on
+each game card in the library:
+
+- **VS AI** — start instantly against a platform rival. Three AI
+  difficulty levels (Easy / Normal / Hard) change how sharp the
+  opponent plays and scale the rewards: Easy ×0.8, Normal ×1.0,
+  Hard ×1.3. On Hard, TicTacToe plays unbeatable minimax, Reversi uses
+  positional weights, Ludo chases captures and finishes, and Connect
+  Four runs a shallow minimax that refuses to open a winning square.
+- **Waiting room (online)** — a matchmaking lobby. Entering the
+  waiting room queues you for the chosen game (new `lobby` table,
+  migration `0004`). The server pairs two queued humans when present;
+  otherwise, after a short randomized 2.5–5.5 s wait, an online rival
+  sits down and the match starts. The client polls the seat with the
+  `joinQueue` / `pollQueue` / `leaveQueue` actions. Matches created
+  this way use match mode `online`.
+- **Live rooms** — create or join a room and play against its host,
+  unchanged (match mode `room`).
+
+True peer-to-peer (client-to-client) play is not possible in this
+runtime: there are no sockets and the runtime is request/response only
+(see Limitations). The waiting room plus persisted server state is the
+platform-correct equivalent — queued human pairs are matched as soon as
+both seats are filled.
 
 ## Features
 
@@ -31,8 +60,14 @@ and only the server's returned state is rendered.
   (level, XP progress, wins, games played, rating), Popular Games,
   Live Rooms, a last-7-days gaming activity chart, achievements, and
   Friends Online.
-- **Games** — complete library with search and filtering, descriptions,
-  and play / matchmaking entry points for all four games.
+- **Games** — complete library with search, category filtering, sorting
+  (A–Z / most played / open seats), descriptions, and a play dialog
+  per game — VS AI with difficulty, the waiting room, and that game's
+  open rooms — for all six games.
+- **Waiting room** — matchmaking queue with a live seat view (seat
+  occupancy, elapsed search time, cancel). Pairs queued humans
+  immediately; otherwise an online rival joins after a short wait.
+  See “Match modes and the waiting room” above.
 - **Rooms** — create, join, and leave rooms with availability and
   capacity validation. Room and match state is persisted server-side;
   the client polls the active match/room (every ~2.5 s while a game
@@ -79,7 +114,7 @@ These behaviours are intentional — do not “fix” them back:
 | SDK | `@hatch/space-sdk` via a `file:` dependency (see below) |
 | Frontend | React 19, React DOM 19, TanStack React Query, Recharts, Tailwind CSS 4 |
 | Backend | Typed server actions (`server/src/actions.ts`) via `@hatch/space-sdk` |
-| Game logic | `server/src/games.ts` — server-validated moves for all four games |
+| Game logic | `server/src/games.ts` — server-validated moves for all six games |
 | Database | Drizzle ORM with a per-artifact SQLite database (`app.db`) |
 | Validation | Zod request/response schemas on every action |
 | Language | TypeScript (strict) for both client and server |
@@ -100,8 +135,8 @@ client/
     assets/             # owned game / hero / avatar artwork (WebP)
 server/
   src/
-    actions.ts          # all server actions (dashboard, rooms, matches, friends, …)
-    games.ts            # game rules and server-side move validation
+    actions.ts          # all server actions (dashboard, rooms, matches, lobby, friends, …)
+    games.ts            # game rules, AI difficulties and server-side move validation
     schema.ts           # Drizzle schema for all tables
 drizzle/                # SQL migrations — see “Database and migrations”
 space.json              # Hatch space metadata (name, slug, runtime, entry)
@@ -199,7 +234,7 @@ the Hatch runtime.
 ## Database and migrations
 
 Schema: `server/src/schema.ts` (Drizzle, SQLite). Tables: `profile`,
-`players`, `friend_requests`, `rooms`, `matches`, `tournaments`,
+`players`, `friend_requests`, `rooms`, `matches`, `lobby`, `tournaments`,
 `store_items`, `purchases`, `notifications`, `settings` (plus the
 scaffold's original `entries` table from the first migration).
 
@@ -211,6 +246,7 @@ intact**:
 | `0001_initial.sql` | Starter scaffold table (`entries`). |
 | `0002_gamehub_core_tables.sql` | All GameHub core tables (`profile`, `players`, `friend_requests`, `rooms`, `matches`, `tournaments`, `store_items`, `purchases`, `notifications`, `settings`). |
 | `0003_fix_seeded_friends_and_rating.sql` | Correction: sets the five seeded rivals to `is_friend = 0` and recomputes the stored profile rating as `1000 + wins × 25 + games × 5` from finished matches. |
+| `0004_lobby_and_indexes.sql` | Adds the `lobby` waiting-room table plus indexes on `matches.status`, `rooms.status`, and `lobby(game_id, status)`. |
 
 > **Note on the `4.8` in `0002`:** `0002_gamehub_core_tables.sql`
 > historically declared `profile.rating` as `REAL NOT NULL DEFAULT 4.8`.

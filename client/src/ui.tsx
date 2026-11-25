@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { api, type ApiResponse } from "./api";
+import { connect4Art, rpsArt } from "./art";
 import heroImg from "./assets/hero.webp";
 import avatarImg from "./assets/avatar.webp";
 import reversiImg from "./assets/game-reversi.webp";
@@ -11,7 +12,7 @@ export { heroImg, avatarImg };
 
 export type View =
   | "home" | "games" | "tournaments" | "leaderboard" | "friends" | "store" | "settings"
-  | "play" | "rooms" | "history" | "profile";
+  | "play" | "waiting" | "rooms" | "history" | "profile";
 
 export type Dashboard = ApiResponse<typeof api, "getDashboard">;
 export type Player = Dashboard["friendsOnline"][number];
@@ -22,6 +23,8 @@ export const GAME_META: Record<string, { name: string; tagline: string; descript
   ludo: { name: "Ludo", tagline: "Roll. Move. Win.", description: "Race all four tokens around the board and home before your opponent. Captures send rivals back to base.", category: "Board", players: "2 Players", img: ludoImg, accent: "#F5C542" },
   snakes: { name: "Snake & Ladder", tagline: "Climb. Don't Fall.", description: "Roll the dice, climb ladders and dodge the snakes on the race to square 100.", category: "Casual", players: "2 Players", img: snakesImg, accent: "#22D3EE" },
   tictactoe: { name: "TicTacToe", tagline: "Think. Win.", description: "The classic three-in-a-row duel. Quick, sharp, and unforgiving of a single mistake.", category: "Strategy", players: "2 Players", img: tttImg, accent: "#F472B6" },
+  connect4: { name: "Connect Four", tagline: "Drop. Align. Win.", description: "Line up four discs horizontally, vertically or diagonally before your rival does. Center control is everything.", category: "Strategy", players: "2 Players", img: connect4Art, accent: "#60A5FA" },
+  rps: { name: "RPS Blitz", tagline: "Read. React. Win.", description: "Rock, Paper, Scissors, first to three points. Read your rival's pattern and counter it before they read yours.", category: "Casual", players: "1 v 1", img: rpsArt, accent: "#A3E635" },
 };
 export const GAME_IDS = Object.keys(GAME_META);
 

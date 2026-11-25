@@ -124,10 +124,16 @@ html, body {
 }
 .gh-live-dot { animation: gh-pulse-dot 1.8s ease-in-out infinite; }
 
+@keyframes gh-pulse-ring {
+  0% { transform: scale(0.55); opacity: 0.9; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+.gh-pulse-ring { animation: gh-pulse-ring 2s ease-out infinite; }
+
 .gh-progress { transition: width .8s cubic-bezier(.22, 1, .36, 1); }
 
 @media (prefers-reduced-motion: reduce) {
-  .gh-float, .gh-pop, .gh-fadein, .gh-live-dot { animation: none; }
+  .gh-float, .gh-pop, .gh-fadein, .gh-live-dot, .gh-pulse-ring { animation: none; }
   .gh-progress { transition: none; }
 }
 

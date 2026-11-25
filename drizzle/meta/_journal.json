@@ -22,6 +22,13 @@
       "when": 1795442594035,
       "tag": "0003_fix_seeded_friends_and_rating",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1795605433000,
+      "tag": "0004_lobby_and_indexes",
+      "breakpoints": true
     }
   ]
 }

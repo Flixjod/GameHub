@@ -1,7 +1,7 @@
 import { defineAction, z, type ActionsModule, type Ctx } from "@hatch/space-sdk";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import * as schema from "./schema";
-import { applyMove, initialState, type GameId } from "./games";
+import { applyMove, initialState, normalizeDifficulty, type GameId } from "./games";
 
 /* ---------------- Catalog (platform content) ---------------- */
 
@@ -10,7 +10,12 @@ export const GAMES = [
   { id: "ludo", name: "Ludo", tagline: "Roll. Move. Win.", description: "Race all four tokens around the board and home before your opponent. Captures send rivals back to base.", category: "Board", players: "2 Players", accent: "#F5C542" },
   { id: "snakes", name: "Snake & Ladder", tagline: "Climb. Don't Fall.", description: "Roll the dice, climb ladders and dodge the snakes on the race to square 100.", category: "Casual", players: "2 Players", accent: "#22D3EE" },
   { id: "tictactoe", name: "TicTacToe", tagline: "Think. Win.", description: "The classic three-in-a-row duel. Quick, sharp, and unforgiving of a single mistake.", category: "Strategy", players: "2 Players", accent: "#F472B6" },
+  { id: "connect4", name: "Connect Four", tagline: "Drop. Align. Win.", description: "Line up four discs horizontally, vertically or diagonally before your rival does. Center control is everything.", category: "Strategy", players: "2 Players", accent: "#60A5FA" },
+  { id: "rps", name: "RPS Blitz", tagline: "Read. React. Win.", description: "Rock, Paper, Scissors, first to three points. Read your rival's pattern and counter it before they read yours.", category: "Casual", players: "1 v 1", accent: "#A3E635" },
 ] as const;
+
+const GAME_ID_ENUM = ["reversi", "ludo", "snakes", "tictactoe", "connect4", "rps"] as const;
+const DIFFICULTY_ENUM = ["easy", "normal", "hard"] as const;
 
 const RIVALS: Array<[string, string, number, number, number, string]> = [
   // name, color, level, rating, wins, status
@@ -35,6 +40,8 @@ const ACHIEVEMENTS = [
   { key: "marathon", title: "Marathon Player", description: "Play 25 matches.", target: 25, metric: "games", icon: "gamepad" },
   { key: "reversi-master", title: "Reversi Master", description: "Win 5 Reversi matches.", target: 5, metric: "reversiWins", icon: "target" },
   { key: "ludo-legend", title: "Ludo Legend", description: "Win 5 Ludo matches.", target: 5, metric: "ludoWins", icon: "crown" },
+  { key: "connect-king", title: "Connect King", description: "Win 3 Connect Four matches.", target: 3, metric: "connect4Wins", icon: "target" },
+  { key: "mind-reader", title: "Mind Reader", description: "Win 3 RPS Blitz matches.", target: 3, metric: "rpsWins", icon: "zap" },
   { key: "social", title: "Social Player", description: "Add 3 friends.", target: 3, metric: "friends", icon: "users" },
   { key: "collector", title: "Collector", description: "Own 3 store items.", target: 3, metric: "owned", icon: "gem" },
 ] as const;
@@ -229,11 +236,15 @@ export const Actions = {
         switch (metric) {
           case "wins": return wins;
           case "games": return games;
-          case "reversiWins": return finished.filter((m) => m.gameId === "reversi" && m.result === "win").length;
-          case "ludoWins": return finished.filter((m) => m.gameId === "ludo" && m.result === "win").length;
           case "friends": return friends.length;
           case "owned": return ownedCount;
-          default: return 0;
+          default:
+            // Generic per-game win metric: "<gameId>Wins" (reversiWins, ludoWins, connect4Wins, …)
+            if (metric.endsWith("Wins")) {
+              const gameId = metric.slice(0, -4);
+              return finished.filter((m) => m.gameId === gameId && m.result === "win").length;
+            }
+            return 0;
         }
       };
       const achievements = ACHIEVEMENTS.map((a) => {
@@ -329,7 +340,7 @@ export const Actions = {
     description: "Creates a new multiplayer room hosted by the user.",
     request: z.object({
       name: z.string().trim().min(3).max(40),
-      gameId: z.enum(["reversi", "ludo", "snakes", "tictactoe"]),
+      gameId: z.enum(GAME_ID_ENUM),
       maxPlayers: z.number().int().min(2).max(4),
     }),
     response: z.object({ room: roomShape }),
@@ -396,10 +407,11 @@ export const Actions = {
   }),
 
   startMatch: defineAction({
-    description: "Starts a new match of the chosen game against a platform rival.",
+    description: "Starts a new match of the chosen game against a platform rival, at the chosen AI difficulty.",
     request: z.object({
-      gameId: z.enum(["reversi", "ludo", "snakes", "tictactoe"]),
+      gameId: z.enum(GAME_ID_ENUM),
       opponent: z.string().trim().max(40).optional(),
+      difficulty: z.enum(DIFFICULTY_ENUM).optional(),
     }),
     response: z.object({ matchId: z.number() }),
     async handler(ctx, args) {
@@ -411,14 +423,123 @@ export const Actions = {
         : rivals[Math.floor(Math.random() * rivals.length)];
       const opponent = chosen?.name ?? "NovaQueen";
       const gameId = args.gameId as GameId;
+      const difficulty = normalizeDifficulty(args.difficulty);
       const inserted = await db.insert(schema.matches).values({
         gameId, opponent, mode: "ai",
-        state: JSON.stringify(initialState(gameId)), status: "active",
+        state: JSON.stringify(initialState(gameId, difficulty)), status: "active",
       }).returning({ id: schema.matches.id });
       const m = inserted[0];
       if (!m) throw new Error("Could not start the match.");
       ctx.invalidateQueries();
       return { matchId: m.id };
+    },
+  }),
+
+  joinQueue: defineAction({
+    description: "Enters the waiting room for a game. Queued humans are paired; otherwise an online rival joins after a short wait.",
+    request: z.object({
+      gameId: z.enum(GAME_ID_ENUM),
+      difficulty: z.enum(DIFFICULTY_ENUM).optional(),
+    }),
+    response: z.object({ queueId: z.number() }),
+    async handler(ctx, args) {
+      await ensureSeed(ctx);
+      const db = ctx.db<typeof schema>();
+      const prof = await getProfileRow(db);
+      // Only one live waiting entry per player and game.
+      const prior = await db.select().from(schema.lobby)
+        .where(sql`${schema.lobby.playerName} = ${prof.username} AND ${schema.lobby.gameId} = ${args.gameId} AND ${schema.lobby.status} = 'waiting'`);
+      for (const row of prior) {
+        await db.update(schema.lobby).set({ status: "cancelled" }).where(eq(schema.lobby.id, row.id));
+      }
+      const inserted = await db.insert(schema.lobby).values({
+        gameId: args.gameId,
+        playerName: prof.username,
+        difficulty: normalizeDifficulty(args.difficulty),
+        status: "waiting",
+      }).returning({ id: schema.lobby.id });
+      const q = inserted[0];
+      if (!q) throw new Error("Could not join the waiting room.");
+      ctx.invalidateQueries();
+      return { queueId: q.id };
+    },
+  }),
+
+  pollQueue: defineAction({
+    description: "Polls a waiting-room entry. Pairs a second queued human when present, otherwise an online rival after a short randomized wait.",
+    request: z.object({ queueId: z.number().int().positive() }),
+    response: z.object({
+      status: z.enum(["waiting", "matched", "cancelled"]),
+      waitedMs: z.number(),
+      playersInLine: z.number(),
+      matchId: z.number().nullable(),
+      opponent: z.string().nullable(),
+      gameId: z.string(),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const rows = await db.select().from(schema.lobby).where(eq(schema.lobby.id, args.queueId));
+      const entry = rows[0];
+      if (!entry) throw new Error("Waiting-room entry not found.");
+      if (entry.status === "cancelled") {
+        return { status: "cancelled", waitedMs: 0, playersInLine: 0, matchId: null, opponent: null, gameId: entry.gameId };
+      }
+      if (entry.status === "matched") {
+        return { status: "matched", waitedMs: entry.matchedAt ? entry.matchedAt.getTime() - entry.createdAt.getTime() : 0, playersInLine: 0, matchId: entry.matchId ?? null, opponent: entry.opponent ?? null, gameId: entry.gameId };
+      }
+      const now = Date.now();
+      const waited = now - entry.createdAt.getTime();
+      // 1) A real queued human for the same game — pair immediately.
+      const others = await db.select().from(schema.lobby)
+        .where(sql`${schema.lobby.gameId} = ${entry.gameId} AND ${schema.lobby.status} = 'waiting' AND ${schema.lobby.id} != ${entry.id}`);
+      const human = others.find((o) => o.playerName !== entry.playerName);
+      if (human) {
+        const difficulty = normalizeDifficulty(human.difficulty ?? entry.difficulty);
+        const inserted = await db.insert(schema.matches).values({
+          gameId: entry.gameId as GameId, opponent: human.playerName, mode: "online",
+          state: JSON.stringify(initialState(entry.gameId as GameId, difficulty)), status: "active",
+        }).returning({ id: schema.matches.id });
+        const m = inserted[0];
+        if (!m) throw new Error("Could not start the match.");
+        await db.update(schema.lobby).set({ status: "matched", opponent: human.playerName, matchId: m.id, matchedAt: new Date() }).where(eq(schema.lobby.id, entry.id));
+        await db.update(schema.lobby).set({ status: "matched", opponent: entry.playerName, matchId: m.id, matchedAt: new Date() }).where(eq(schema.lobby.id, human.id));
+        await notify(db, "Opponent found!", `You’ve been matched with ${human.playerName} — the ${entry.gameId} match is ready.`, "match");
+        ctx.invalidateQueries();
+        return { status: "matched", waitedMs: waited, playersInLine: 0, matchId: m.id, opponent: human.playerName, gameId: entry.gameId };
+      }
+      // 2) Randomized pair delay (2.5–5.5 s per entry), then an online rival steps in.
+      const pairAfterMs = 2500 + (entry.id * 977) % 3000;
+      if (waited >= pairAfterMs) {
+        const rivals = await db.select().from(schema.players);
+        const online = rivals.filter((p) => p.status === "online");
+        const pool = online.length ? online : rivals.filter((p) => p.status === "ingame");
+        const chosen = (pool.length ? pool : rivals)[Math.floor(Math.random() * (pool.length ? pool.length : rivals.length))];
+        const opponent = chosen?.name ?? "NovaQueen";
+        const difficulty = normalizeDifficulty(entry.difficulty);
+        const inserted = await db.insert(schema.matches).values({
+          gameId: entry.gameId as GameId, opponent, mode: "online",
+          state: JSON.stringify(initialState(entry.gameId as GameId, difficulty)), status: "active",
+        }).returning({ id: schema.matches.id });
+        const m = inserted[0];
+        if (!m) throw new Error("Could not start the match.");
+        await db.update(schema.lobby).set({ status: "matched", opponent, matchId: m.id, matchedAt: new Date() }).where(eq(schema.lobby.id, entry.id));
+        await notify(db, "Opponent found!", `${opponent} joined your ${entry.gameId} waiting room — the match is ready.`, "match");
+        ctx.invalidateQueries();
+        return { status: "matched", waitedMs: waited, playersInLine: 0, matchId: m.id, opponent, gameId: entry.gameId };
+      }
+      return { status: "waiting", waitedMs: waited, playersInLine: 1, matchId: null, opponent: null, gameId: entry.gameId };
+    },
+  }),
+
+  leaveQueue: defineAction({
+    description: "Cancels a waiting-room entry.",
+    request: z.object({ queueId: z.number().int().positive() }),
+    response: z.object({ ok: z.literal(true) }),
+    async handler(ctx, args): Promise<{ ok: true }> {
+      const db = ctx.db<typeof schema>();
+      await db.update(schema.lobby).set({ status: "cancelled" }).where(eq(schema.lobby.id, args.queueId));
+      ctx.invalidateQueries();
+      return { ok: true };
     },
   }),
 
@@ -461,7 +582,10 @@ export const Actions = {
       const newVersion = m.version + 1;
       let reward: { xp: number; coins: number } | null = null;
       if (outcome.finished && outcome.result) {
-        reward = outcome.result === "win" ? { xp: 100, coins: 60 } : outcome.result === "draw" ? { xp: 40, coins: 25 } : { xp: 15, coins: 10 };
+        // Difficulty-scaled rewards: the baseline (normal) is unchanged.
+        const mult = (state as { difficulty?: string }).difficulty === "hard" ? 1.3 : (state as { difficulty?: string }).difficulty === "easy" ? 0.8 : 1;
+        const base = outcome.result === "win" ? { xp: 100, coins: 60 } : outcome.result === "draw" ? { xp: 40, coins: 25 } : { xp: 15, coins: 10 };
+        reward = { xp: Math.round(base.xp * mult), coins: Math.round(base.coins * mult) };
         const prof = await getProfileRow(db);
         const newXp = prof.xp + reward.xp;
         const before = levelFromXp(prof.xp).level;
