@@ -10,13 +10,23 @@ import type { Actions } from "../../server/src/actions";
 
 const FIELDS = actionFields<typeof Actions>();
 
-type StartMatchFn = (gameId: string, opponent?: string) => void;
+type StartMatchFn = (gameId: string, opponent?: string, difficulty?: Difficulty) => void;
+export type QueueFn = (gameId: string, difficulty?: "easy" | "normal" | "hard") => void;
+export type Difficulty = "easy" | "normal" | "hard";
+const DIFFICULTIES: Array<{ id: Difficulty; label: string; hint: string }> = [
+  { id: "easy", label: "Easy", hint: "Relaxed rivals · smaller rewards" },
+  { id: "normal", label: "Normal", hint: "Balanced rivals · standard rewards" },
+  { id: "hard", label: "Hard", hint: "Sharp rivals · +30% rewards" },
+];
 
 /* ---------------- Games library ---------------- */
 
-export function GamesPage({ onPlay }: { onPlay: StartMatchFn }) {
+export function GamesPage({ onPlay, onQueue, onJoinRoom }: { onPlay: StartMatchFn; onQueue: QueueFn; onJoinRoom: (roomId: number) => void }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
+  const [sort, setSort] = useState<"az" | "played" | "seats">("az");
+  const [chooser, setChooser] = useState<string | null>(null);
+  const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const roomsQ = useQuery({ queryKey: ["rooms"], queryFn: () => api.listRooms({}) });
   const historyQ = useQuery({ queryKey: ["history", 50], queryFn: () => api.listMatchHistory({ limit: 50 }) });
 
@@ -34,12 +44,20 @@ export function GamesPage({ onPlay }: { onPlay: StartMatchFn }) {
   }, [historyQ.data]);
 
   const categories = ["All", ...Array.from(new Set(GAME_IDS.map((id) => GAME_META[id]?.category ?? "")))];
-  const filtered = GAME_IDS.filter((id) => {
-    const g = GAME_META[id];
-    if (!g) return false;
-    if (category !== "All" && g.category !== category) return false;
-    return g.name.toLowerCase().includes(query.toLowerCase());
-  });
+  const filtered = useMemo(() => {
+    const ids = GAME_IDS.filter((id) => {
+      const g = GAME_META[id];
+      if (!g) return false;
+      if (category !== "All" && g.category !== category) return false;
+      return g.name.toLowerCase().includes(query.toLowerCase());
+    });
+    if (sort === "az") return [...ids].sort((a, b) => (GAME_META[a]?.name ?? "").localeCompare(GAME_META[b]?.name ?? ""));
+    if (sort === "played") return [...ids].sort((a, b) => (played[b] ?? 0) - (played[a] ?? 0));
+    return [...ids].sort((a, b) => (openSeats[b] ?? 0) - (openSeats[a] ?? 0));
+  }, [category, query, sort, played, openSeats]);
+
+  const chooserMeta = chooser ? GAME_META[chooser] : undefined;
+  const chooserRooms = (roomsQ.data?.rooms ?? []).filter((r) => r.gameId === chooser && r.status !== "full");
 
   return (
     <div className="gh-fadein">
@@ -50,17 +68,22 @@ export function GamesPage({ onPlay }: { onPlay: StartMatchFn }) {
           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--dim)]">{Icon.search(18)}</span>
           <input aria-label="Search games" className="gh-input w-full pl-11 pr-4 py-2.5 text-sm" placeholder="Search games…" value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
-        <div className="flex gap-2 flex-wrap" role="tablist" aria-label="Game categories">
-          {categories.map((c) => (
-            <button key={c} type="button" role="tab" aria-selected={category === c} onClick={() => setCategory(c)}
-              className="px-4 py-2 rounded-full text-sm font-semibold transition-all"
-              style={category === c
-                ? { background: "linear-gradient(135deg,#3bf2ab,#12b981)", color: "#04150c" }
-                : { border: "1px solid var(--border)", color: "var(--dim)" }}>
-              {c}
-            </button>
-          ))}
-        </div>
+        <select aria-label="Sort games" className="gh-input w-full sm:w-44 px-4 py-2.5 text-sm" style={{ borderRadius: 12 }} value={sort} onChange={(e) => setSort(e.target.value as "az" | "played" | "seats")}>
+          <option value="az">Sort: A–Z</option>
+          <option value="played">Sort: Most played</option>
+          <option value="seats">Sort: Open seats</option>
+        </select>
+      </div>
+      <div className="flex gap-2 flex-wrap mb-5" role="tablist" aria-label="Game categories">
+        {categories.map((c) => (
+          <button key={c} type="button" role="tab" aria-selected={category === c} onClick={() => setCategory(c)}
+            className="px-4 py-2 rounded-full text-sm font-semibold transition-all"
+            style={category === c
+              ? { background: "linear-gradient(135deg,#3bf2ab,#12b981)", color: "#04150c" }
+              : { border: "1px solid var(--border)", color: "var(--dim)" }}>
+            {c}
+          </button>
+        ))}
       </div>
       {filtered.length === 0 ? (
         <div className="gh-card"><EmptyState icon={Icon.search(26)} title="No games found" body="Try a different search or category." /></div>
@@ -84,13 +107,75 @@ export function GamesPage({ onPlay }: { onPlay: StartMatchFn }) {
                     <span>{played[id] ?? 0} matches played by you</span>
                     <span>{openSeats[id] ?? 0} open room seats</span>
                   </div>
-                  <button type="button" className="gh-btn-primary w-full py-2.5 mt-4 text-sm inline-flex items-center justify-center gap-2" onClick={() => onPlay(id)}>
-                    {Icon.play(16)} Play Now
+                  <button type="button" className="gh-btn-primary w-full py-2.5 mt-4 text-sm inline-flex items-center justify-center gap-2" onClick={() => { setChooser(id); setDifficulty("normal"); }}>
+                    {Icon.play(16)} Play
                   </button>
                 </div>
               </article>
             );
           })}
+        </div>
+      )}
+
+      {chooserMeta && chooser && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.65)" }} role="dialog" aria-modal="true" aria-label={`Choose how to play ${chooserMeta.name}`}>
+          <div className="gh-card p-5 w-full max-w-md gh-pop">
+            <div className="flex items-center gap-3 mb-4">
+              <img src={chooserMeta.img} alt="" className="w-12 h-12 rounded-xl object-cover" />
+              <div className="flex-1">
+                <h2 className="font-display font-bold">How do you want to play?</h2>
+                <p className="text-xs text-[var(--dim)]">{chooserMeta.name} · {chooserMeta.tagline}</p>
+              </div>
+              <button type="button" aria-label="Close play options" className="text-[var(--dim)] p-2" onClick={() => setChooser(null)}>{Icon.x(20)}</button>
+            </div>
+
+            <p className="text-xs font-bold text-[var(--dim)] mb-2">AI OPPONENT</p>
+            <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="AI difficulty">
+              {DIFFICULTIES.map((d) => (
+                <button key={d.id} type="button" role="radio" aria-checked={difficulty === d.id} onClick={() => setDifficulty(d.id)}
+                  className="rounded-xl p-3 text-left"
+                  style={{ border: `1px solid ${difficulty === d.id ? "var(--accent)" : "var(--border)"}`, background: difficulty === d.id ? "rgba(46,232,154,0.08)" : "rgba(255,255,255,0.02)" }}>
+                  <span className="block text-sm font-bold">{d.label}</span>
+                  <span className="block text-[10px] text-[var(--dim)] mt-0.5 leading-snug">{d.hint}</span>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="gh-btn-primary w-full py-2.5 mt-3 text-sm inline-flex items-center justify-center gap-2" onClick={() => { setChooser(null); onPlay(chooser, undefined, difficulty); }}>
+              {Icon.play(16)} Play vs AI ({difficulty === "normal" ? "Normal" : difficulty === "hard" ? "Hard" : "Easy"} rival)
+            </button>
+
+            <div className="flex items-center gap-3 my-4" aria-hidden="true">
+              <span className="flex-1 h-px" style={{ background: "var(--border)" }} />
+              <span className="text-xs text-[var(--dim)]">or</span>
+              <span className="flex-1 h-px" style={{ background: "var(--border)" }} />
+            </div>
+
+            <p className="text-xs font-bold text-[var(--dim)] mb-2">ONLINE</p>
+            <button type="button" className="gh-btn-primary w-full py-2.5 text-sm inline-flex items-center justify-center gap-2" style={{ background: "linear-gradient(135deg,#67e8f9,#0891b2)" }}
+              onClick={() => { setChooser(null); onQueue(chooser, difficulty); }}>
+              {Icon.users(16)} Enter Waiting Room
+            </button>
+            <p className="text-[11px] text-[var(--dim)] text-center mt-1.5">Get seated against the next queued player — or an online rival if the queue is quiet.</p>
+
+            {chooserRooms.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-bold text-[var(--dim)] mb-2">OPEN ROOMS · {chooserMeta.name.toUpperCase()}</p>
+                <div className="space-y-2 max-h-40 overflow-auto">
+                  {chooserRooms.map((r) => (
+                    <button key={r.id} type="button" className="w-full flex items-center gap-3 p-2.5 rounded-xl text-left hover:bg-white/5"
+                      style={{ border: "1px solid var(--border)" }}
+                      onClick={() => { setChooser(null); onJoinRoom(r.id); }}>
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-semibold text-sm truncate">{r.name}</span>
+                        <span className="block text-xs text-[var(--dim)]">Host {r.hostName} · {r.currentPlayers}/{r.maxPlayers}</span>
+                      </span>
+                      <span className="text-xs font-bold text-[var(--accent)]">JOIN</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

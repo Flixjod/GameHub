@@ -13,6 +13,23 @@ interface LudoState {
   tokens: { p: number[]; o: number[] }; dice: number; phase: string;
   movable: number[]; winner: string; log: string[];
 }
+interface C4State { board: number[]; winner: string; lastMove: number; difficulty: string }
+interface RpsState { pScore: number; oScore: number; round: number; lastP: number; lastO: number; lastOutcome: string; winner: string; difficulty: string; history: Array<{ p: number; o: number }> }
+
+const C4_ROWS = 6, C4_COLS = 7;
+const RPS_GLYPHS = ["✊", "✋", "✌"];
+const RPS_NAMES = ["Rock", "Paper", "Scissors"];
+const RPS_TARGET = 3;
+
+function difficultyLabel(difficulty: string | undefined): string {
+  return difficulty === "easy" ? "Easy" : difficulty === "hard" ? "Hard" : "Normal";
+}
+
+function modeLabel(mode: string, difficulty: string | undefined): string {
+  if (mode === "room") return "Live room match";
+  if (mode === "online") return "Waiting room match";
+  return `AI match · ${difficultyLabel(difficulty)} rival`;
+}
 
 const SNAKES: Record<number, number> = { 16: 6, 47: 26, 49: 11, 56: 53, 62: 19, 64: 60, 87: 24, 93: 73, 95: 75, 98: 78 };
 const LADDERS: Record<number, number> = { 2: 38, 7: 14, 8: 31, 15: 34, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 100 };
@@ -190,7 +207,7 @@ export function PlayScreen({ matchId, onExit, onPlayAgain }: {
               <img src={meta.img} alt={meta.name} className="w-12 h-12 rounded-xl object-cover" />
               <div>
                 <h2 className="font-display font-extrabold text-xl leading-tight">{meta.name}</h2>
-                <p className="text-xs text-[var(--dim)]">{match.mode === "room" ? "Live room match" : "Ranked match"} · vs {match.opponent}</p>
+                <p className="text-xs text-[var(--dim)]">{modeLabel(match.mode, (state as { difficulty?: string }).difficulty)} · vs {match.opponent}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 text-sm text-[var(--dim)]">
@@ -213,6 +230,12 @@ export function PlayScreen({ matchId, onExit, onPlayAgain }: {
           {match.gameId === "ludo" && (
             <LudoBoard state={state as unknown as LudoState} disabled={busy || finished} onRoll={() => move.mutate({ action: "roll" })} onToken={(t) => move.mutate({ action: "move", token: t })} opponent={match.opponent} />
           )}
+          {match.gameId === "connect4" && (
+            <C4Board state={state as unknown as C4State} disabled={busy || finished} onDrop={(c) => move.mutate({ index: c })} />
+          )}
+          {match.gameId === "rps" && (
+            <RpsBoard state={state as unknown as RpsState} disabled={busy || finished} onThrow={(t) => move.mutate({ index: t })} opponent={match.opponent} />
+          )}
 
           {message && !finished && (
             <p className="mt-4 text-sm text-center text-[var(--dim)]" role="status">{busy ? "Opponent is thinking…" : message}</p>
@@ -227,7 +250,7 @@ export function PlayScreen({ matchId, onExit, onPlayAgain }: {
               <Avatar name="You" img size={44} />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold truncate">You</p>
-                <p className="text-xs text-[var(--dim)]">{match.gameId === "reversi" ? "Black discs" : match.gameId === "tictactoe" ? "Playing X" : match.gameId === "ludo" ? "Red tokens" : "First to 100"}</p>
+                <p className="text-xs text-[var(--dim)]">{match.gameId === "reversi" ? "Black discs" : match.gameId === "tictactoe" ? "Playing X" : match.gameId === "ludo" ? "Red tokens" : match.gameId === "connect4" ? "Blue discs" : match.gameId === "rps" ? `First to ${RPS_TARGET} points` : "First to 100"}</p>
               </div>
               {!finished && <span className="text-xs font-bold text-[var(--accent)]">TURN</span>}
             </div>
@@ -235,12 +258,14 @@ export function PlayScreen({ matchId, onExit, onPlayAgain }: {
               <Avatar name={match.opponent} color="#8B5CF6" size={44} />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold truncate">{match.opponent}</p>
-                <p className="text-xs text-[var(--dim)]">{match.mode === "room" ? "Room host" : "Platform rival"}</p>
+                <p className="text-xs text-[var(--dim)]">{match.mode === "room" ? "Room host" : match.mode === "online" ? "Matched opponent" : `Platform rival · ${difficultyLabel((state as { difficulty?: string }).difficulty)}`}</p>
               </div>
             </div>
             {match.gameId === "reversi" && <RevScore state={state as unknown as RevState} />}
             {match.gameId === "ludo" && <LudoScore state={state as unknown as LudoState} />}
             {match.gameId === "snakes" && <SnakeScore state={state as unknown as SnakeState} />}
+            {match.gameId === "connect4" && <C4Score state={state as unknown as C4State} />}
+            {match.gameId === "rps" && <RpsScore state={state as unknown as RpsState} />}
           </div>
 
           {(match.gameId === "snakes" || match.gameId === "ludo") && (
@@ -474,6 +499,107 @@ function LudoBoard({ state, disabled, onRoll, onToken, opponent }: {
         )}
       </div>
       <p className="text-xs text-[var(--dim)] text-center mt-2">Roll a 6 to leave base. Land on an opponent outside a safe star square to capture it. First to bring all 4 tokens home wins.</p>
+    </div>
+  );
+}
+
+function C4Score({ state }: { state: C4State }) {
+  const blue = state.board.filter((v) => v === 1).length;
+  const gold = state.board.filter((v) => v === 2).length;
+  return (
+    <div className="mt-4 space-y-2 text-sm">
+      <div className="flex justify-between"><span>Discs on the board</span><b>{blue + gold} / 42</b></div>
+      <ProgressBar value={blue + gold} max={42} color="#60A5FA" />
+      <p className="text-xs text-[var(--dim)]">Line up four of your blue discs — any direction — to win.</p>
+    </div>
+  );
+}
+
+function C4Board({ state, disabled, onDrop }: { state: C4State; disabled: boolean; onDrop: (col: number) => void }) {
+  const fullCols = useMemo(() => {
+    const full: number[] = [];
+    for (let c = 0; c < C4_COLS; c++) if (state.board[c] !== 0) full.push(c);
+    return full;
+  }, [state.board]);
+  const landingCell = (col: number): number => {
+    for (let r = C4_ROWS - 1; r >= 0; r--) {
+      if (state.board[r * C4_COLS + col] === 0) return r * C4_COLS + col;
+    }
+    return -1;
+  };
+  return (
+    <div className="max-w-[440px] mx-auto">
+      <div className="grid p-2.5 rounded-2xl" style={{ gridTemplateColumns: `repeat(${C4_COLS}, 1fr)`, gap: "6px", background: "linear-gradient(150deg,#0b2f4a,#071c2c)", border: "1px solid var(--border-strong)" }} role="grid" aria-label="Connect Four board">
+        {Array.from({ length: C4_ROWS * C4_COLS }, (_, i) => {
+          const col = i % C4_COLS;
+          const row = Math.floor(i / C4_COLS);
+          const cell = state.board[i];
+          const isLanding = landingCell(col) === i;
+          const full = fullCols.includes(col);
+          const isLast = state.lastMove === i;
+          return (
+            <button key={i} type="button" aria-label={`Column ${col + 1}, row ${row + 1}${cell === 1 ? ", your disc" : cell === 2 ? ", opponent disc" : ""}`}
+              disabled={disabled || full}
+              onClick={() => onDrop(col)}
+              className="aspect-square rounded-full flex items-center justify-center relative"
+              style={{ background: "rgba(255,255,255,0.04)", border: isLanding && !full ? "1px dashed rgba(96,165,250,0.5)" : "1px solid rgba(255,255,255,0.06)" }}>
+              {cell === 1 && (
+                <span className="gh-pop block w-[86%] h-[86%] rounded-full" style={{ background: "radial-gradient(circle at 32% 30%, #93c5fd, #2563eb 70%)", border: "2px solid #172554", boxShadow: isLast ? "0 0 12px rgba(96,165,250,0.9)" : "0 2px 6px rgba(0,0,0,0.5)" }} aria-label="Your disc" />
+              )}
+              {cell === 2 && (
+                <span className="gh-pop block w-[86%] h-[86%] rounded-full" style={{ background: "radial-gradient(circle at 32% 30%, #fde68a, #d97706 70%)", border: "2px solid #451a03", boxShadow: isLast ? "0 0 12px rgba(245,197,66,0.9)" : "0 2px 6px rgba(0,0,0,0.5)" }} aria-label="Opponent disc" />
+              )}
+              {!cell && !full && isLanding && !disabled && <span className="block w-[24%] h-[24%] rounded-full" style={{ background: "rgba(96,165,250,0.5)" }} aria-label="Drop here" />}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs text-[var(--dim)] text-center mt-3">Tap any cell in a column to drop your disc there. Glowing dot marks where it will land.</p>
+    </div>
+  );
+}
+
+function RpsScore({ state }: { state: RpsState }) {
+  return (
+    <div className="mt-4 space-y-2 text-sm">
+      <div className="flex justify-between"><span>Your points</span><b>{state.pScore} / {RPS_TARGET}</b></div>
+      <ProgressBar value={state.pScore} max={RPS_TARGET} />
+      <div className="flex justify-between text-[var(--dim)]"><span>Opponent points</span><b>{state.oScore} / {RPS_TARGET}</b></div>
+      <ProgressBar value={state.oScore} max={RPS_TARGET} color="#8B5CF6" />
+    </div>
+  );
+}
+
+function RpsBoard({ state, disabled, onThrow, opponent }: { state: RpsState; disabled: boolean; onThrow: (t: number) => void; opponent: string }) {
+  return (
+    <div className="max-w-[420px] mx-auto">
+      <div className="flex items-center justify-center gap-6 py-4 rounded-2xl mb-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+        <div className="text-center">
+          <p className="text-5xl leading-none" aria-label="Your last throw">{state.lastP >= 0 ? RPS_GLYPHS[state.lastP] : "❔"}</p>
+          <p className="text-xs font-bold mt-2 text-[var(--accent)]">YOU · {state.pScore}</p>
+        </div>
+        <span className="font-display font-extrabold text-sm text-[var(--dim)]">VS</span>
+        <div className="text-center">
+          <p className="text-5xl leading-none" aria-label="Opponent's last throw">{state.lastO >= 0 ? RPS_GLYPHS[state.lastO] : "❔"}</p>
+          <p className="text-xs font-bold mt-2" style={{ color: "#8B5CF6" }}>{opponent.toUpperCase().slice(0, 10)} · {state.oScore}</p>
+        </div>
+      </div>
+      {state.lastOutcome && !state.winner && (
+        <p className="text-center text-sm font-semibold mb-4" role="status" style={{ color: state.lastOutcome === "win" ? "var(--accent)" : state.lastOutcome === "loss" ? "var(--danger)" : "var(--dim)" }}>
+          {state.lastOutcome === "win" ? "Point to you!" : state.lastOutcome === "loss" ? "Point to the opponent." : "Draw — replay the round."} Round {state.round}.
+        </p>
+      )}
+      <div className="grid grid-cols-3 gap-3">
+        {RPS_GLYPHS.map((glyph, t) => (
+          <button key={t} type="button" disabled={disabled} aria-label={`Throw ${RPS_NAMES[t]}`} onClick={() => onThrow(t)}
+            className="gh-card aspect-square py-6 flex flex-col items-center gap-2 gh-card-hover"
+            style={{ background: "rgba(163,230,53,0.05)", borderColor: "rgba(163,230,53,0.25)" }}>
+            <span className="text-4xl">{glyph}</span>
+            <span className="text-xs font-bold text-[var(--dim)]">{RPS_NAMES[t]}</span>
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-[var(--dim)] text-center mt-3">First to {RPS_TARGET} points wins. Sharp rivals learn from your throws — mix it up.</p>
     </div>
   );
 }

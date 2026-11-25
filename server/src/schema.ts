@@ -71,7 +71,7 @@ export const matches = sqliteTable("matches", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   gameId: text("game_id").notNull(),
   opponent: text("opponent").notNull(),
-  mode: text("mode", { enum: ["ai", "room"] }).notNull().default("ai"),
+  mode: text("mode", { enum: ["ai", "room", "online"] }).notNull().default("ai"),
   roomId: integer("room_id"),
   state: text("state").notNull(),
   status: text("status", { enum: ["active", "finished", "abandoned"] })
@@ -83,6 +83,22 @@ export const matches = sqliteTable("matches", {
     .notNull()
     .$defaultFn(() => new Date()),
   finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+});
+
+export const lobby = sqliteTable("lobby", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  gameId: text("game_id").notNull(),
+  playerName: text("player_name").notNull().default("ProGamer"),
+  difficulty: text("difficulty", { enum: ["easy", "normal", "hard"] }).notNull().default("normal"),
+  status: text("status", { enum: ["waiting", "matched", "cancelled"] })
+    .notNull()
+    .default("waiting"),
+  opponent: text("opponent"),
+  matchId: integer("match_id"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  matchedAt: integer("matched_at", { mode: "timestamp_ms" }),
 });
 
 export const tournaments = sqliteTable("tournaments", {

@@ -6,6 +6,7 @@ AchievementIcon, Avatar, GAME_IDS, GAME_META, Icon, ProgressBar, SectionTitle,
 StatusDot, avatarImg, heroImg, type Player, type View,
 } from "./ui";
 import { PlayScreen } from "./Play";
+import { WaitingRoom } from "./WaitingRoom";
 import { actionFields } from "@hatch/space-sdk/fields" with { type: "macro" };
 import type { Actions } from "../../server/src/actions";
 import {
@@ -35,6 +36,7 @@ export function App() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<View>("home");
   const [activeMatchId, setActiveMatchId] = useState<number | null>(null);
+  const [activeQueue, setActiveQueue] = useState<{ queueId: number; gameId: string } | null>(null);
   const [toast, setToast] = useState("");
   const [search, setSearch] = useState("");
   const [searchFocus, setSearchFocus] = useState(false);
@@ -85,10 +87,16 @@ export function App() {
   });
 
   const startMatch = useMutation({
-    mutationFn: async (args: { gameId: string; opponent?: string }) =>
-      api.startMatch({ gameId: args.gameId as "ludo", opponent: args.opponent }),
+    mutationFn: async (args: { gameId: string; opponent?: string; difficulty?: "easy" | "normal" | "hard" }) =>
+      api.startMatch({ gameId: args.gameId as "ludo", opponent: args.opponent, difficulty: args.difficulty }),
     onSuccess: (data) => { setActiveMatchId(data.matchId); setView("play"); },
     onError: (e) => showToast(e instanceof Error ? e.message : "Could not start the match."),
+  });
+  const joinQueue = useMutation({
+    mutationFn: async (args: { gameId: string; difficulty: "easy" | "normal" | "hard" }) =>
+      api.joinQueue({ gameId: args.gameId as "ludo", difficulty: args.difficulty }),
+    onSuccess: (data, args) => { setActiveQueue({ queueId: data.queueId, gameId: args.gameId }); setView("waiting"); },
+    onError: (e) => showToast(e instanceof Error ? e.message : "Could not join the waiting room."),
   });
   const joinRoom = useMutation({
     mutationFn: async (roomId: number) => api.joinRoom({ roomId }),
@@ -103,7 +111,10 @@ export function App() {
     window.scrollTo({ top: 0 });
   };
 
-  const playGame = (gameId: string, opponent?: string) => startMatch.mutate({ gameId, opponent });
+  const playGame = (gameId: string, opponent?: string, difficulty?: "easy" | "normal" | "hard") =>
+    startMatch.mutate({ gameId, opponent, difficulty });
+  const queueGame = (gameId: string, difficulty: "easy" | "normal" | "hard" = "normal") =>
+    joinQueue.mutate({ gameId, difficulty });
   const currentSlide = HERO_SLIDES[slide] ?? HERO_SLIDES[0]!;
 
   return (
@@ -268,8 +279,15 @@ export function App() {
           <main className="px-4 sm:px-6 py-5 pb-24 lg:pb-10 max-w-[1400px] mx-auto w-full">
             {view === "play" && activeMatchId !== null ? (
               <PlayScreen matchId={activeMatchId} onExit={() => go("home")} onPlayAgain={(g) => playGame(g)} />
+            ) : view === "waiting" && activeQueue ? (
+              <WaitingRoom
+                queueId={activeQueue.queueId}
+                gameId={activeQueue.gameId}
+                onMatched={(matchId) => { setActiveQueue(null); setActiveMatchId(matchId); setView("play"); showToast("Opponent found — match starting!"); }}
+                onExit={() => { setActiveQueue(null); go("games"); }}
+              />
             ) : view === "games" ? (
-              <GamesPage onPlay={playGame} />
+              <GamesPage onPlay={playGame} onQueue={queueGame} onJoinRoom={(id) => joinRoom.mutate(id)} />
             ) : view === "rooms" ? (
               <RoomsPage onJoinRoom={(id) => joinRoom.mutate(id)} onPlay={playGame} />
             ) : view === "tournaments" ? (
